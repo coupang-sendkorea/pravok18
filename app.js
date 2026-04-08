@@ -490,7 +490,9 @@ function renderCalendar() {
 
 function renderCalendarDayEvents(dateString) {
   state.selectedCalendarDate = dateString;
-  const events = state.events.filter((event) => event.event_date === dateString);
+  const events = state.events
+    .filter((event) => event.event_date === dateString)
+    .sort((a, b) => `${a.event_time || ''} ${a.title || ''}`.localeCompare(`${b.event_time || ''} ${b.title || ''}`));
 
   if (!events.length) {
     els.calendarDayEvents.innerHTML = `
@@ -512,19 +514,25 @@ function renderCalendarDayEvents(dateString) {
       <div class="section-inline-head">
         <div>
           <h4>${escapeHtml(`События на ${formatDate(dateString)}`)}</h4>
-          <p class="muted">Нажмите «Изменить», чтобы открыть карточку события.</p>
+          <p class="muted">${escapeHtml(`Всего событий: ${events.length}. Открыт полный список записей на выбранную дату.`)}</p>
         </div>
         <button class="btn btn-primary btn-sm" type="button" data-add-event-date="${dateString}">Добавить событие</button>
       </div>
       <div class="day-events-grid">
         ${events.map((event) => `
-          <article class="event-card day-event-card">
-            <div class="split-line">
-              <strong>${escapeHtml(event.title)}</strong>
+          <article class="event-card day-event-card full-event-card">
+            <div class="split-line gap-wrap">
+              <strong class="event-title-full">${escapeHtml(event.title)}</strong>
               <span class="pill soft">${escapeHtml(event.event_time || 'Без времени')}</span>
             </div>
-            <div class="muted small">${escapeHtml(getClientName(event.client_id) || 'Без привязки к клиенту')}</div>
-            ${event.description ? `<div class="line-clamp-3">${escapeHtml(event.description)}</div>` : ''}
+            <div class="event-meta-grid muted small">
+              <div><span class="meta-label">Клиент:</span> ${escapeHtml(getClientName(event.client_id) || 'Без привязки к клиенту')}</div>
+              <div><span class="meta-label">Дата:</span> ${escapeHtml(formatDate(event.event_date))}</div>
+            </div>
+            <div class="event-description-full">
+              <div class="meta-label">Описание</div>
+              <div>${escapeHtml(event.description || 'Описание не указано.')}</div>
+            </div>
             <div class="toolbar-group">
               <button class="btn btn-secondary btn-sm" type="button" data-edit-event="${event.id}">Изменить</button>
               <button class="btn btn-danger btn-sm" type="button" data-delete-event="${event.id}">Удалить</button>
@@ -1444,6 +1452,9 @@ function handleBodyClick(event) {
     renderCalendarDayEvents(calendarDate);
     renderCalendar();
     if (state.activeSection !== 'dashboard') switchSection('dashboard');
+    requestAnimationFrame(() => {
+      els.calendarDayEvents?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     return;
   }
 
@@ -1654,7 +1665,11 @@ function endOfWeek(date) {
 }
 
 function toDateInputValue(date) {
-  return new Date(date).toISOString().slice(0, 10);
+  const value = new Date(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function emptyCard(text) {
