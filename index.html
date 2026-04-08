@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Право CRM</title>
+  <meta name="description" content="CRM для юристов на GitHub Pages + Supabase" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div id="password-gate" class="gate-overlay">
+    <div class="gate-card glass-card">
+      <div class="eyebrow">Доступ к программе</div>
+      <h1>Право CRM</h1>
+      <p class="muted">
+        Введите пароль для входа в программу.
+      </p>
+      <form id="password-form" class="stack gap-16">
+        <div>
+          <label for="password-input">Пароль</label>
+          <input id="password-input" type="password" placeholder="Введите пароль" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary" type="submit">Войти</button>
+      </form>
+      <p class="small warning-text">
+        Это базовая защита интерфейса для GitHub Pages. Для полноценной защиты позже лучше подключить Supabase Auth.
+      </p>
+    </div>
+  </div>
+
+  <div id="config-warning" class="config-warning hidden">
+    <div class="config-warning__inner">
+      <strong>Нужно подключить Supabase.</strong>
+      <span>Откройте файл <code>config.js</code> и вставьте URL проекта и publishable/anon key.</span>
+    </div>
+  </div>
+
+  <div class="app-shell hidden" id="app-shell">
+    <aside class="sidebar glass-card">
+      <div>
+        <div class="brand-mark">⚖️</div>
+        <div class="brand-title">Право CRM</div>
+        <div class="brand-subtitle">Клиенты, оплаты и календарь</div>
+      </div>
+
+      <nav class="menu">
+        <button class="menu-item active" data-section="dashboard">Главная</button>
+        <button class="menu-item" data-section="clients">Клиенты</button>
+        <button class="menu-item" data-section="archive">Архив</button>
+        <button class="menu-item" data-section="events">События</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="refresh-btn" class="btn btn-secondary btn-block">Обновить данные</button>
+        <button id="open-client-btn" class="btn btn-primary btn-block">Новый клиент</button>
+        <button id="open-event-btn" class="btn btn-secondary btn-block">Новое событие</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="page-header glass-card">
+        <div>
+          <div class="eyebrow">Юридическая практика</div>
+          <h2 id="section-title">Главная</h2>
+          <p id="section-subtitle" class="muted">Обзор дел, платежей и ближайших событий.</p>
+        </div>
+        <div class="header-actions">
+          <div class="badge-soft" id="today-label"></div>
+        </div>
+      </header>
+
+      <section id="dashboard-section" class="section-panel">
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <div class="dashboard-grid">
+          <div class="glass-card card-large">
+            <div class="card-head">
+              <div>
+                <h3>Напоминания по оплатам</h3>
+                <p class="muted">Просрочки и ближайшие сроки.</p>
+              </div>
+            </div>
+            <div id="payment-alerts" class="list-stack"></div>
+          </div>
+
+          <div class="glass-card card-large">
+            <div class="card-head">
+              <div>
+                <h3>Ближайшие события</h3>
+                <p class="muted">Что скоро наступит или уже идет.</p>
+              </div>
+            </div>
+            <div id="upcoming-events" class="list-stack"></div>
+          </div>
+        </div>
+
+        <div class="glass-card card-large">
+          <div class="card-head calendar-head">
+            <div>
+              <h3>Календарь событий</h3>
+              <p class="muted">Главный календарь по датам.</p>
+            </div>
+            <div class="calendar-controls">
+              <button id="prev-month-btn" class="btn btn-secondary btn-sm">←</button>
+              <div id="calendar-title" class="calendar-title"></div>
+              <button id="next-month-btn" class="btn btn-secondary btn-sm">→</button>
+            </div>
+          </div>
+          <div id="calendar-grid" class="calendar-grid"></div>
+          <div id="calendar-day-events" class="calendar-day-events"></div>
+        </div>
+      </section>
+
+      <section id="clients-section" class="section-panel hidden">
+        <div class="glass-card card-large">
+          <div class="toolbar">
+            <div class="toolbar-group grow">
+              <input id="client-search" type="search" placeholder="Поиск по ФИО, делу, телефону или email" />
+            </div>
+            <div class="toolbar-group">
+              <select id="client-filter">
+                <option value="all">Все клиенты</option>
+                <option value="overdue">С просрочкой</option>
+                <option value="debt">С долгом</option>
+                <option value="scheduled">По графику</option>
+              </select>
+            </div>
+          </div>
+          <div id="clients-table" class="table-wrapper"></div>
+        </div>
+      </section>
+
+      <section id="archive-section" class="section-panel hidden">
+        <div class="glass-card card-large">
+          <div class="card-head">
+            <div>
+              <h3>Архив завершённых дел</h3>
+              <p class="muted">Дела, по которым нажали «Дело завершено».</p>
+            </div>
+          </div>
+          <div id="archive-table" class="table-wrapper"></div>
+        </div>
+      </section>
+
+      <section id="events-section" class="section-panel hidden">
+        <div class="glass-card card-large">
+          <div class="card-head">
+            <div>
+              <h3>Все события</h3>
+              <p class="muted">Судебные заседания, звонки, встречи и дедлайны.</p>
+            </div>
+          </div>
+          <div id="events-table" class="table-wrapper"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="client-modal" class="modal">
+    <form method="dialog" class="modal-card modal-xl">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Карточка клиента</div>
+          <h3 id="client-modal-title">Новый клиент</h3>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="client-modal">✕</button>
+      </div>
+
+      <div class="modal-body client-modal-layout">
+        <section class="glass-subcard">
+          <h4>Основные данные</h4>
+          <div class="form-grid cols-2">
+            <div>
+              <label for="client-full-name">ФИО клиента</label>
+              <input id="client-full-name" type="text" required />
+            </div>
+            <div>
+              <label for="client-case-title">Название дела / услуги</label>
+              <input id="client-case-title" type="text" />
+            </div>
+            <div>
+              <label for="client-phone">Телефон</label>
+              <input id="client-phone" type="text" />
+            </div>
+            <div>
+              <label for="client-email">Email</label>
+              <input id="client-email" type="email" />
+            </div>
+            <div>
+              <label for="client-messenger">Мессенджер</label>
+              <input id="client-messenger" type="text" />
+            </div>
+            <div>
+              <label for="client-address">Адрес</label>
+              <input id="client-address" type="text" />
+            </div>
+          </div>
+          <div>
+            <label for="client-notes">Примечание</label>
+            <textarea id="client-notes" rows="3"></textarea>
+          </div>
+        </section>
+
+        <section class="glass-subcard">
+          <h4>Финансовые условия</h4>
+          <div class="form-grid cols-3">
+            <div>
+              <label for="client-contract-amount">Сумма договора</label>
+              <input id="client-contract-amount" type="number" min="0" step="0.01" />
+            </div>
+            <div>
+              <label for="client-payment-type">Способ оплаты</label>
+              <select id="client-payment-type">
+                <option value="100% предоплата">100% предоплата</option>
+                <option value="частями">Частями</option>
+                <option value="по графику">По графику</option>
+              </select>
+            </div>
+            <div>
+              <label for="client-payment-deadline">Срок оплаты</label>
+              <input id="client-payment-deadline" type="date" />
+            </div>
+            <div>
+              <label for="client-payment-reminder">Напоминание об оплате</label>
+              <input id="client-payment-reminder" type="date" />
+            </div>
+          </div>
+          <div class="summary-capsules" id="client-finance-summary"></div>
+        </section>
+
+        <section class="glass-subcard">
+          <div class="section-inline-head">
+            <div>
+              <h4>Фактические оплаты</h4>
+              <p class="muted">После добавления оплаты долг уменьшается автоматически.</p>
+            </div>
+            <button id="add-payment-btn" class="btn btn-secondary btn-sm" type="button">Добавить оплату</button>
+          </div>
+          <div id="payments-list"></div>
+        </section>
+
+        <section class="glass-subcard">
+          <div class="section-inline-head">
+            <div>
+              <h4>Дополнительные расходы конторы</h4>
+              <p class="muted">Почтовые, госпошлина и другие затраты.</p>
+            </div>
+            <button id="add-expense-btn" class="btn btn-secondary btn-sm" type="button">Добавить расход</button>
+          </div>
+          <div id="expenses-list"></div>
+        </section>
+
+        <section class="glass-subcard">
+          <div class="section-inline-head">
+            <div>
+              <h4>График оплат</h4>
+              <p class="muted">Можно использовать для оплаты частями или по графику.</p>
+            </div>
+            <button id="add-schedule-btn" class="btn btn-secondary btn-sm" type="button">Добавить этап</button>
+          </div>
+          <div id="schedule-list"></div>
+        </section>
+      </div>
+
+      <div class="modal-foot">
+        <div class="modal-foot-left">
+          <button id="archive-client-btn" class="btn btn-danger hidden" type="button">Дело завершено</button>
+          <button id="restore-client-btn" class="btn btn-secondary hidden" type="button">Вернуть из архива</button>
+        </div>
+        <div class="modal-foot-right">
+          <button class="btn btn-secondary" type="button" data-close-modal="client-modal">Отмена</button>
+          <button id="save-client-btn" class="btn btn-primary" type="button">Сохранить</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="event-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Событие</div>
+          <h3 id="event-modal-title">Новое событие</h3>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="event-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid cols-2">
+          <div>
+            <label for="event-title">Название события</label>
+            <input id="event-title" type="text" required />
+          </div>
+          <div>
+            <label for="event-client-id">Связанный клиент</label>
+            <select id="event-client-id">
+              <option value="">Без привязки</option>
+            </select>
+          </div>
+          <div>
+            <label for="event-date">Дата</label>
+            <input id="event-date" type="date" required />
+          </div>
+          <div>
+            <label for="event-time">Время</label>
+            <input id="event-time" type="time" />
+          </div>
+        </div>
+        <div>
+          <label for="event-description">Описание</label>
+          <textarea id="event-description" rows="4"></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div></div>
+        <div class="modal-foot-right">
+          <button class="btn btn-secondary" type="button" data-close-modal="event-modal">Отмена</button>
+          <button id="save-event-btn" class="btn btn-primary" type="button">Сохранить</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
