@@ -21,12 +21,15 @@ const state = {
   expenses: [],
   schedules: [],
   events: [],
+  cashTransactions: [],
   activeSection: 'dashboard',
   calendarMonth: startOfMonth(new Date()),
   selectedCalendarDate: toDateInputValue(new Date()),
   currentClientId: null,
   currentEventId: null,
+  currentCashId: null,
   clientDraft: null,
+  workspaceKey: null,
 };
 
 const els = {
@@ -38,6 +41,7 @@ const els = {
   statsGrid: $('#stats-grid'),
   paymentAlerts: $('#payment-alerts'),
   upcomingEvents: $('#upcoming-events'),
+  recentCashOps: $('#recent-cash-ops'),
   calendarGrid: $('#calendar-grid'),
   calendarTitle: $('#calendar-title'),
   calendarDayEvents: $('#calendar-day-events'),
@@ -47,12 +51,19 @@ const els = {
   clientSearch: $('#client-search'),
   clientFilter: $('#client-filter'),
   clientsTable: $('#clients-table'),
+  cashSearch: $('#cash-search'),
+  cashFilter: $('#cash-filter'),
+  cashBalanceCard: $('#cash-balance-card'),
+  cashSummaryGrid: $('#cash-summary-grid'),
+  cashTable: $('#cash-table'),
   archiveTable: $('#archive-table'),
   eventsTable: $('#events-table'),
   clientModal: $('#client-modal'),
   eventModal: $('#event-modal'),
+  cashModal: $('#cash-modal'),
   clientModalTitle: $('#client-modal-title'),
   eventModalTitle: $('#event-modal-title'),
+  cashModalTitle: $('#cash-modal-title'),
   financeSummary: $('#client-finance-summary'),
   paymentsList: $('#payments-list'),
   expensesList: $('#expenses-list'),
@@ -61,12 +72,15 @@ const els = {
   refreshBtn: $('#refresh-btn'),
   openClientBtn: $('#open-client-btn'),
   openEventBtn: $('#open-event-btn'),
+  openCashBtn: $('#open-cash-btn'),
+  openCashInlineBtn: $('#open-cash-inline-btn'),
   prevMonthBtn: $('#prev-month-btn'),
   nextMonthBtn: $('#next-month-btn'),
   saveClientBtn: $('#save-client-btn'),
   archiveClientBtn: $('#archive-client-btn'),
   restoreClientBtn: $('#restore-client-btn'),
   saveEventBtn: $('#save-event-btn'),
+  saveCashBtn: $('#save-cash-btn'),
 };
 
 const clientFields = {
@@ -91,6 +105,14 @@ const eventFields = {
   description: $('#event-description'),
 };
 
+const cashFields = {
+  entry_date: $('#cash-date'),
+  flow_type: $('#cash-type'),
+  category: $('#cash-category'),
+  amount: $('#cash-amount'),
+  description: $('#cash-description'),
+};
+
 init();
 
 function init() {
@@ -103,17 +125,21 @@ function init() {
   }).format(new Date());
 
   const unlocked = sessionStorage.getItem('law-crm-unlocked') === 'yes';
-  if (unlocked) {
+  const savedWorkspaceKey = sessionStorage.getItem('law-crm-workspace-key');
+  if (unlocked && savedWorkspaceKey) {
+    state.workspaceKey = savedWorkspaceKey;
     unlockApp();
   }
 }
 
 function bindGlobalEvents() {
-  els.passwordForm.addEventListener('submit', (event) => {
+  els.passwordForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const expectedPassword = CONFIG.APP_PASSWORD || 'pravo888';
     if (els.passwordInput.value === expectedPassword) {
+      state.workspaceKey = await buildWorkspaceKey(els.passwordInput.value);
       sessionStorage.setItem('law-crm-unlocked', 'yes');
+      sessionStorage.setItem('law-crm-workspace-key', state.workspaceKey);
       unlockApp();
       return;
     }
@@ -132,9 +158,11 @@ function bindGlobalEvents() {
     button.addEventListener('click', () => closeModal(button.dataset.closeModal));
   });
 
-  els.refreshBtn.addEventListener('click', loadAllData);
+  els.refreshBtn.addEventListener('click', () => loadAllData({ silent: false }));
   els.openClientBtn.addEventListener('click', () => openClientModal());
   els.openEventBtn.addEventListener('click', () => openEventModal());
+  els.openCashBtn.addEventListener('click', () => openCashModal());
+  els.openCashInlineBtn?.addEventListener('click', () => openCashModal());
   els.prevMonthBtn.addEventListener('click', () => {
     state.calendarMonth = addMonths(state.calendarMonth, -1);
     renderCalendar();
@@ -145,6 +173,8 @@ function bindGlobalEvents() {
   });
   els.clientSearch.addEventListener('input', renderClientsTable);
   els.clientFilter.addEventListener('change', renderClientsTable);
+  els.cashSearch?.addEventListener('input', renderCashSection);
+  els.cashFilter?.addEventListener('change', renderCashSection);
   $('#add-payment-btn').addEventListener('click', () => addDraftRow('payments'));
   $('#add-expense-btn').addEventListener('click', () => addDraftRow('expenses'));
   $('#add-schedule-btn').addEventListener('click', () => addDraftRow('schedules'));
@@ -152,6 +182,7 @@ function bindGlobalEvents() {
   els.archiveClientBtn.addEventListener('click', archiveCurrentClient);
   els.restoreClientBtn.addEventListener('click', restoreCurrentClient);
   els.saveEventBtn.addEventListener('click', saveEvent);
+  els.saveCashBtn?.addEventListener('click', saveCashTransaction);
 }
 
 async function unlockApp() {
@@ -164,27 +195,35 @@ async function unlockApp() {
     return;
   }
 
+  if (!state.workspaceKey) {
+    showToast('Не удалось определить рабочее пространство по паролю.', 'error');
+    return;
+  }
+
   els.configWarning.classList.add('hidden');
-  await loadAllData();
+  await loadAllData({ silent: false });
 }
 
-async function loadAllData() {
+async function loadAllData({ silent = true } = {}) {
   if (!supabase) {
     renderAll();
     return;
   }
 
   try {
-    showToast('Загружаю данные…', 'info', 1800);
-    const [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes] = await Promise.all([
-      supabase.from('clients').select('*').order('created_at', { ascending: false }),
-      supabase.from('payments').select('*').order('payment_date', { ascending: false }),
-      supabase.from('expenses').select('*').order('expense_date', { ascending: false }),
-      supabase.from('payment_schedules').select('*').order('due_date', { ascending: true }),
-      supabase.from('events').select('*').order('event_date', { ascending: true }).order('event_time', { ascending: true }),
+    if (!silent) showToast('Обновляю данные…', 'info', 1400);
+    await migrateLegacyWorkspaceIfNeeded();
+
+    const [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes] = await Promise.all([
+      supabase.from('clients').select('*').eq('workspace_key', state.workspaceKey).order('created_at', { ascending: false }),
+      supabase.from('payments').select('*').eq('workspace_key', state.workspaceKey).order('payment_date', { ascending: false }),
+      supabase.from('expenses').select('*').eq('workspace_key', state.workspaceKey).order('expense_date', { ascending: false }),
+      supabase.from('payment_schedules').select('*').eq('workspace_key', state.workspaceKey).order('due_date', { ascending: true }),
+      supabase.from('events').select('*').eq('workspace_key', state.workspaceKey).order('event_date', { ascending: true }).order('event_time', { ascending: true }),
+      supabase.from('cash_transactions').select('*').eq('workspace_key', state.workspaceKey).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
     ]);
 
-    const responses = [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes];
+    const responses = [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes];
     const firstError = responses.find((response) => response.error)?.error;
     if (firstError) throw firstError;
 
@@ -193,20 +232,63 @@ async function loadAllData() {
     state.expenses = expensesRes.data || [];
     state.schedules = schedulesRes.data || [];
     state.events = eventsRes.data || [];
+    state.cashTransactions = cashRes.data || [];
 
     renderAll();
   } catch (error) {
     console.error(error);
-    showToast(`Ошибка загрузки: ${error.message || error}`, 'error', 5000);
+    const message = error?.message || String(error);
+    if (message.includes('workspace_key') || message.includes('cash_transactions')) {
+      showToast('Нужно обновить базу Supabase: еще раз выполните новый файл supabase-schema.sql.', 'error', 8000);
+      return;
+    }
+    showToast(`Ошибка загрузки: ${message}`, 'error', 5000);
   }
+}
+
+async function migrateLegacyWorkspaceIfNeeded() {
+  if (!supabase || !state.workspaceKey) return;
+
+  const { count: currentCount, error: currentError } = await supabase
+    .from('clients')
+    .select('*', { count: 'exact', head: true })
+    .eq('workspace_key', state.workspaceKey);
+
+  if (currentError) throw currentError;
+  if ((currentCount || 0) > 0) return;
+
+  const { count: legacyCount, error: legacyError } = await supabase
+    .from('clients')
+    .select('*', { count: 'exact', head: true })
+    .is('workspace_key', null);
+
+  if (legacyError) throw legacyError;
+  if ((legacyCount || 0) === 0) return;
+
+  const confirmed = window.confirm('Найдены старые данные без привязки к паролю. Привязать их к текущему паролю, чтобы они открывались на всех устройствах?');
+  if (!confirmed) return;
+
+  const tableNames = ['clients', 'payments', 'expenses', 'payment_schedules', 'events'];
+  for (const tableName of tableNames) {
+    const { error } = await supabase
+      .from(tableName)
+      .update({ workspace_key: state.workspaceKey })
+      .is('workspace_key', null);
+
+    if (error) throw error;
+  }
+
+  showToast('Старые данные привязаны к текущему паролю.', 'success', 4200);
 }
 
 function renderAll() {
   renderStats();
   renderAlerts();
   renderUpcomingEvents();
+  renderRecentCashOps();
   renderCalendar();
   renderClientsTable();
+  renderCashSection();
   renderArchiveTable();
   renderEventsTable();
   populateEventClientOptions();
@@ -225,15 +307,18 @@ function renderStats() {
     return acc;
   }, { contract: 0, paid: 0, debt: 0, expenses: 0 });
 
+  const cash = getCashMetrics();
   const upcomingPayments = buildPaymentAlerts().filter((item) => item.kind !== 'overdue').length;
   const upcomingEventsCount = getUpcomingEvents(14).length;
 
   const stats = [
     { label: 'Активные дела', value: activeClients.length, subtext: `В архиве: ${archivedClients.length}` },
-    { label: 'Сумма договоров', value: formatMoney(totals.contract), subtext: 'Сумма договоров не меняется' },
-    { label: 'Оплачено фактически', value: formatMoney(totals.paid), subtext: 'Считается по внесённым оплатам' },
+    { label: 'Сумма договоров', value: formatMoney(totals.contract), subtext: 'Сумма договоров фиксируется отдельно' },
+    { label: 'Оплачено по договорам', value: formatMoney(totals.paid), subtext: 'Считается по внесённым оплатам' },
     { label: 'Остаток долга', value: formatMoney(totals.debt), subtext: 'Уменьшается автоматически' },
-    { label: 'Расходы конторы', value: formatMoney(totals.expenses), subtext: 'Почта, госпошлина и др.' },
+    { label: 'Расходы конторы', value: formatMoney(totals.expenses), subtext: 'Почта, госпошлина и иные затраты' },
+    { label: 'Иные доходы / расходы', value: formatSignedMoney(cash.otherNet), subtext: 'Операции вне договоров' },
+    { label: 'Касса', value: formatSignedMoney(cash.balance), subtext: 'Может быть и отрицательной' },
     { label: 'Ближайшие события', value: upcomingEventsCount, subtext: `Напоминаний по оплатам: ${upcomingPayments}` },
   ];
 
@@ -325,14 +410,33 @@ function renderUpcomingEvents() {
   els.upcomingEvents.innerHTML = items.map((event) => {
     const clientName = getClientName(event.client_id);
     return `
-      <article class="event-card">
+      <article class="event-card compact-event-card">
         <strong>${escapeHtml(event.title)}</strong>
         <div>${escapeHtml(formatEventDateTime(event))}</div>
         <div class="muted small">${escapeHtml(clientName || 'Без привязки к клиенту')}</div>
-        ${event.description ? `<div class="muted small">${escapeHtml(event.description)}</div>` : ''}
+        ${event.description ? `<div class="muted small line-clamp-2">${escapeHtml(event.description)}</div>` : ''}
       </article>
     `;
   }).join('');
+}
+
+function renderRecentCashOps() {
+  const rows = getCashLedgerRows().slice(0, 8);
+  if (!rows.length) {
+    els.recentCashOps.innerHTML = emptyCard('Операции по кассе пока не добавлены.');
+    return;
+  }
+
+  els.recentCashOps.innerHTML = rows.map((row) => `
+    <article class="event-card compact-event-card ${row.flowType === 'income' ? 'income-card' : 'expense-card'}">
+      <div class="split-line">
+        <strong>${escapeHtml(row.title)}</strong>
+        <span class="money-inline ${row.flowType === 'income' ? 'income' : 'expense'}">${escapeHtml(formatSignedMoney(row.signedAmount))}</span>
+      </div>
+      <div class="muted small">${escapeHtml(formatDate(row.date))}</div>
+      <div class="muted small line-clamp-2">${escapeHtml(row.description)}</div>
+    </article>
+  `).join('');
 }
 
 function renderCalendar() {
@@ -342,10 +446,10 @@ function renderCalendar() {
   const gridEnd = endOfWeek(monthEnd);
   const cells = [];
 
-  els.calendarTitle.textContent = new Intl.DateTimeFormat('ru-RU', {
+  els.calendarTitle.textContent = capitalize(new Intl.DateTimeFormat('ru-RU', {
     month: 'long',
     year: 'numeric',
-  }).format(monthStart);
+  }).format(monthStart));
 
   const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
   dayNames.forEach((dayName) => {
@@ -357,13 +461,25 @@ function renderCalendar() {
     const dayEvents = state.events.filter((event) => event.event_date === iso);
     const isCurrentMonth = current.getMonth() === monthStart.getMonth();
     const isToday = iso === toDateInputValue(new Date());
-    const tags = dayEvents.slice(0, 3).map((event) => `<span class="calendar-tag">${escapeHtml(shorten(event.title, 16))}</span>`).join('');
-    const extra = dayEvents.length > 3 ? `<span class="calendar-tag">+${dayEvents.length - 3}</span>` : '';
+    const isSelected = iso === state.selectedCalendarDate;
+    const lines = dayEvents.slice(0, 2).map((event) => `
+      <div class="calendar-event-line">
+        <span class="calendar-event-time">${escapeHtml(event.event_time || '')}</span>
+        <span class="calendar-event-title">${escapeHtml(shorten(event.title, 22))}</span>
+      </div>
+    `).join('');
+    const extra = dayEvents.length > 2 ? `<div class="calendar-more">+ ещё ${dayEvents.length - 2}</div>` : '';
 
     cells.push(`
-      <button class="calendar-cell ${!isCurrentMonth ? 'muted-month' : ''} ${isToday ? 'today' : ''} ${dayEvents.length ? 'has-events' : ''}" data-calendar-date="${iso}">
-        <div class="calendar-day-number">${current.getDate()}</div>
-        <div class="calendar-tags">${tags}${extra}</div>
+      <button class="calendar-cell ${!isCurrentMonth ? 'muted-month' : ''} ${isToday ? 'today' : ''} ${dayEvents.length ? 'has-events' : ''} ${isSelected ? 'selected' : ''}" type="button" data-calendar-date="${iso}">
+        <div class="calendar-cell-top">
+          <div class="calendar-day-number">${current.getDate()}</div>
+          ${dayEvents.length ? `<span class="calendar-count">${dayEvents.length}</span>` : ''}
+        </div>
+        <div class="calendar-events-preview">
+          ${lines || '<div class="calendar-empty">—</div>'}
+          ${extra}
+        </div>
       </button>
     `);
   }
@@ -377,20 +493,46 @@ function renderCalendarDayEvents(dateString) {
   const events = state.events.filter((event) => event.event_date === dateString);
 
   if (!events.length) {
-    els.calendarDayEvents.innerHTML = emptyCard(`На ${formatDate(dateString)} событий нет.`);
+    els.calendarDayEvents.innerHTML = `
+      <div class="calendar-day-panel glass-subcard">
+        <div class="section-inline-head">
+          <div>
+            <h4>${escapeHtml(`События на ${formatDate(dateString)}`)}</h4>
+            <p class="muted">На выбранную дату записей нет.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" type="button" data-add-event-date="${dateString}">Добавить событие</button>
+        </div>
+      </div>
+    `;
     return;
   }
 
   els.calendarDayEvents.innerHTML = `
-    <div class="muted">События на ${escapeHtml(formatDate(dateString))}</div>
-    ${events.map((event) => `
-      <article class="event-card">
-        <strong>${escapeHtml(event.title)}</strong>
-        <div>${escapeHtml(formatEventDateTime(event))}</div>
-        <div class="muted small">${escapeHtml(getClientName(event.client_id) || 'Без привязки к клиенту')}</div>
-        ${event.description ? `<div class="muted small">${escapeHtml(event.description)}</div>` : ''}
-      </article>
-    `).join('')}
+    <div class="calendar-day-panel glass-subcard">
+      <div class="section-inline-head">
+        <div>
+          <h4>${escapeHtml(`События на ${formatDate(dateString)}`)}</h4>
+          <p class="muted">Нажмите «Изменить», чтобы открыть карточку события.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" type="button" data-add-event-date="${dateString}">Добавить событие</button>
+      </div>
+      <div class="day-events-grid">
+        ${events.map((event) => `
+          <article class="event-card day-event-card">
+            <div class="split-line">
+              <strong>${escapeHtml(event.title)}</strong>
+              <span class="pill soft">${escapeHtml(event.event_time || 'Без времени')}</span>
+            </div>
+            <div class="muted small">${escapeHtml(getClientName(event.client_id) || 'Без привязки к клиенту')}</div>
+            ${event.description ? `<div class="line-clamp-3">${escapeHtml(event.description)}</div>` : ''}
+            <div class="toolbar-group">
+              <button class="btn btn-secondary btn-sm" type="button" data-edit-event="${event.id}">Изменить</button>
+              <button class="btn btn-danger btn-sm" type="button" data-delete-event="${event.id}">Удалить</button>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </div>
   `;
 }
 
@@ -441,10 +583,10 @@ function renderClientsTable() {
           <th>Сумма договора</th>
           <th>Способ оплаты</th>
           <th>Срок оплаты</th>
-          <th>Сумма фактически оплаченная</th>
-          <th>Сумма остатка (долга)</th>
-          <th>Дополнительные расходы конторы</th>
-          <th>Напоминание об оплате</th>
+          <th>Оплачено</th>
+          <th>Остаток долга</th>
+          <th>Расходы конторы</th>
+          <th>Напоминание</th>
           <th>Архив</th>
         </tr>
       </thead>
@@ -462,9 +604,7 @@ function renderClientsTable() {
                   ${contacts.length ? contacts.map((item) => `<div class="mini-meta">${escapeHtml(item)}</div>`).join('') : '<div class="mini-meta">Контакты не заполнены</div>'}
                 </div>
               </td>
-              <td>
-                <div>${escapeHtml(client.case_title || '—')}</div>
-              </td>
+              <td><div class="wrap-cell">${escapeHtml(client.case_title || '—')}</div></td>
               <td>${escapeHtml(formatMoney(parseNumber(client.contract_amount)))}</td>
               <td>${escapeHtml(client.payment_type || '—')}</td>
               <td>${escapeHtml(formatDate(client.payment_deadline))}</td>
@@ -473,11 +613,90 @@ function renderClientsTable() {
               <td>${escapeHtml(formatMoney(summary.expenses))}</td>
               <td>${escapeHtml(formatDate(client.payment_reminder_date))}</td>
               <td>
-                <button class="btn btn-danger btn-sm btn-nowrap" data-archive-id="${client.id}">Убрать в архив</button>
+                <button class="btn btn-danger btn-sm btn-nowrap" type="button" data-archive-id="${client.id}">Убрать в архив</button>
               </td>
             </tr>
           `;
         }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderCashSection() {
+  const cash = getCashMetrics();
+  els.cashBalanceCard.innerHTML = `
+    <div class="eyebrow">Касса</div>
+    <div class="cash-balance ${cash.balance < 0 ? 'negative' : 'positive'}">${escapeHtml(formatSignedMoney(cash.balance))}</div>
+    <div class="muted">Баланс может быть отрицательным. В расчёт входят оплаты по договорам, расходы конторы и иные операции.</div>
+  `;
+
+  const summaryItems = [
+    { label: 'Оплаты по договорам', value: formatMoney(cash.contractIncome) },
+    { label: 'Расходы конторы', value: formatMoney(cash.officeExpenses) },
+    { label: 'Иные доходы', value: formatMoney(cash.otherIncome) },
+    { label: 'Иные расходы', value: formatMoney(cash.otherExpense) },
+  ];
+  els.cashSummaryGrid.innerHTML = summaryItems.map((item) => `
+    <div class="capsule compact-capsule">
+      <div class="capsule-label">${escapeHtml(item.label)}</div>
+      <div class="capsule-value">${escapeHtml(item.value)}</div>
+    </div>
+  `).join('');
+
+  const search = (els.cashSearch?.value || '').trim().toLowerCase();
+  const filter = els.cashFilter?.value || 'all';
+  let rows = getCashLedgerRows();
+
+  if (filter !== 'all') {
+    rows = rows.filter((row) => row.flowType === filter);
+  }
+  if (search) {
+    rows = rows.filter((row) => [row.title, row.description, row.clientName, row.category]
+      .some((value) => String(value || '').toLowerCase().includes(search)));
+  }
+
+  if (!rows.length) {
+    els.cashTable.innerHTML = emptyCard('Операции не найдены.');
+    return;
+  }
+
+  els.cashTable.innerHTML = `
+    <table class="table cash-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Тип</th>
+          <th>Источник</th>
+          <th>Категория</th>
+          <th>Клиент</th>
+          <th>Описание</th>
+          <th>Сумма</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(formatDate(row.date))}</td>
+            <td><span class="pill ${row.flowType === 'income' ? 'ok' : 'danger'}">${escapeHtml(row.flowType === 'income' ? 'Доход' : 'Расход')}</span></td>
+            <td>${escapeHtml(row.sourceLabel)}</td>
+            <td>${escapeHtml(row.category || '—')}</td>
+            <td>${escapeHtml(row.clientName || '—')}</td>
+            <td><div class="wrap-cell">${escapeHtml(row.description || '—')}</div></td>
+            <td><span class="money-inline ${row.flowType === 'income' ? 'income' : 'expense'}">${escapeHtml(formatSignedMoney(row.signedAmount))}</span></td>
+            <td>
+              <div class="toolbar-group">
+                ${row.sourceType === 'cash'
+                  ? `
+                    <button class="btn btn-secondary btn-sm" type="button" data-edit-cash="${row.id}">Изменить</button>
+                    <button class="btn btn-danger btn-sm" type="button" data-delete-cash="${row.id}">Удалить</button>
+                  `
+                  : `<button class="btn btn-secondary btn-sm" type="button" data-open-client="${row.clientId}">Открыть дело</button>`}
+              </div>
+            </td>
+          </tr>
+        `).join('')}
       </tbody>
     </table>
   `;
@@ -514,7 +733,7 @@ function renderArchiveTable() {
               <td>${escapeHtml(formatMoney(summary.paid))}</td>
               <td>${escapeHtml(formatMoney(summary.debt))}</td>
               <td>${escapeHtml(formatDateTime(client.case_completed_at))}</td>
-              <td><button class="btn btn-secondary btn-sm" data-restore-id="${client.id}">Вернуть</button></td>
+              <td><button class="btn btn-secondary btn-sm" type="button" data-restore-id="${client.id}">Вернуть</button></td>
             </tr>
           `;
         }).join('')}
@@ -548,11 +767,11 @@ function renderEventsTable() {
             <td>${escapeHtml(event.event_time || '—')}</td>
             <td>${escapeHtml(event.title)}</td>
             <td>${escapeHtml(getClientName(event.client_id) || '—')}</td>
-            <td>${escapeHtml(event.description || '—')}</td>
+            <td><div class="wrap-cell">${escapeHtml(event.description || '—')}</div></td>
             <td>
               <div class="toolbar-group">
-                <button class="btn btn-secondary btn-sm" data-edit-event="${event.id}">Изменить</button>
-                <button class="btn btn-danger btn-sm" data-delete-event="${event.id}">Удалить</button>
+                <button class="btn btn-secondary btn-sm" type="button" data-edit-event="${event.id}">Изменить</button>
+                <button class="btn btn-danger btn-sm" type="button" data-delete-event="${event.id}">Удалить</button>
               </div>
             </td>
           </tr>
@@ -573,11 +792,15 @@ function switchSection(section) {
   const map = {
     dashboard: {
       title: 'Главная',
-      subtitle: 'Обзор дел, платежей и ближайших событий.',
+      subtitle: 'Обзор дел, платежей, кассы и ближайших событий.',
     },
     clients: {
       title: 'Клиенты',
       subtitle: 'Карточки клиентов и финансовая информация.',
+    },
+    cash: {
+      title: 'Касса',
+      subtitle: 'Общий баланс, иные доходы/расходы и движение денег.',
     },
     archive: {
       title: 'Архив',
@@ -592,6 +815,7 @@ function switchSection(section) {
   $$('.menu-item').forEach((item) => item.classList.toggle('active', item.dataset.section === section));
   $('#dashboard-section').classList.toggle('hidden', section !== 'dashboard');
   $('#clients-section').classList.toggle('hidden', section !== 'clients');
+  $('#cash-section').classList.toggle('hidden', section !== 'cash');
   $('#archive-section').classList.toggle('hidden', section !== 'archive');
   $('#events-section').classList.toggle('hidden', section !== 'events');
   els.sectionTitle.textContent = map[section].title;
@@ -649,6 +873,18 @@ function openEventModal(eventId = null, dateString = null) {
   eventFields.event_time.value = item?.event_time || '';
   eventFields.description.value = item?.description || '';
   els.eventModal.showModal();
+}
+
+function openCashModal(cashId = null) {
+  const item = cashId ? state.cashTransactions.find((row) => row.id === cashId) : null;
+  state.currentCashId = item?.id || null;
+  els.cashModalTitle.textContent = item ? 'Изменение операции' : 'Новая операция';
+  cashFields.entry_date.value = item?.entry_date || toDateInputValue(new Date());
+  cashFields.flow_type.value = item?.flow_type || 'income';
+  cashFields.category.value = item?.category || '';
+  cashFields.amount.value = item ? String(parseNumber(item.amount)) : '';
+  cashFields.description.value = item?.description || '';
+  els.cashModal.showModal();
 }
 
 function renderClientFinanceSummary() {
@@ -770,33 +1006,34 @@ function addDraftRow(type) {
 
 function handleBodyInput(event) {
   const target = event.target;
-  if (!state.clientDraft) return;
 
-  for (const [field, input] of Object.entries(clientFields)) {
-    if (target === input) {
-      state.clientDraft[field] = input.type === 'number' ? parseNumber(input.value) : input.value;
+  if (state.clientDraft) {
+    for (const [field, input] of Object.entries(clientFields)) {
+      if (target === input) {
+        state.clientDraft[field] = input.type === 'number' ? parseNumber(input.value) : input.value;
+        renderClientFinanceSummary();
+        return;
+      }
+    }
+
+    const rowElement = target.closest('[data-row-type]');
+    if (rowElement) {
+      const rowType = rowElement.dataset.rowType;
+      const rowId = rowElement.dataset.rowId;
+      const field = target.dataset.rowField;
+      if (!field) return;
+
+      const collection = state.clientDraft[rowType];
+      const row = collection.find((item) => String(item.id || item._tempId) === rowId);
+      if (!row) return;
+
+      row[field] = target.type === 'number' ? parseNumber(target.value) : target.value;
+      if (rowType === 'expenses' && field === 'comment') {
+        row.category = row.comment;
+      }
       renderClientFinanceSummary();
-      return;
     }
   }
-
-  const rowElement = target.closest('[data-row-type]');
-  if (!rowElement) return;
-
-  const rowType = rowElement.dataset.rowType;
-  const rowId = rowElement.dataset.rowId;
-  const field = target.dataset.rowField;
-  if (!field) return;
-
-  const collection = state.clientDraft[rowType];
-  const row = collection.find((item) => String(item.id || item._tempId) === rowId);
-  if (!row) return;
-
-  row[field] = target.type === 'number' ? parseNumber(target.value) : target.value;
-  if (rowType === 'expenses' && field === 'comment') {
-    row.category = row.comment;
-  }
-  renderClientFinanceSummary();
 }
 
 async function saveClient() {
@@ -813,6 +1050,7 @@ async function saveClient() {
 
   try {
     const payload = {
+      workspace_key: state.workspaceKey,
       full_name: draft.full_name.trim(),
       case_title: draft.case_title || null,
       phone: draft.phone || null,
@@ -827,69 +1065,136 @@ async function saveClient() {
       case_status: draft.case_status || 'active',
     };
 
-    let clientId = draft.id;
+    let savedClient;
 
-    if (clientId) {
-      const { error } = await supabase.from('clients').update(payload).eq('id', clientId);
+    if (draft.id) {
+      const { data, error } = await supabase
+        .from('clients')
+        .update(payload)
+        .eq('id', draft.id)
+        .eq('workspace_key', state.workspaceKey)
+        .select()
+        .single();
       if (error) throw error;
+      savedClient = data;
     } else {
       const { data, error } = await supabase.from('clients').insert(payload).select().single();
       if (error) throw error;
-      clientId = data.id;
-      state.currentClientId = clientId;
-      draft.id = clientId;
+      savedClient = data;
+      state.currentClientId = data.id;
+      draft.id = data.id;
     }
 
-    await syncChildCollection('payments', clientId, draft.originalPayments, draft.payments, (row) => ({
-      payment_date: row.payment_date || null,
-      amount: parseNumber(row.amount),
-      comment: row.comment || null,
-    }));
+    const clientId = savedClient.id;
 
-    await syncChildCollection('expenses', clientId, draft.originalExpenses, draft.expenses, (row) => ({
-      expense_date: row.expense_date || null,
-      amount: parseNumber(row.amount),
-      comment: row.comment || null,
-      category: row.comment || null,
-    }));
+    await Promise.all([
+      syncChildCollection('payments', clientId, draft.originalPayments, draft.payments, (row) => ({
+        payment_date: row.payment_date || null,
+        amount: parseNumber(row.amount),
+        comment: row.comment || null,
+      })),
+      syncChildCollection('expenses', clientId, draft.originalExpenses, draft.expenses, (row) => ({
+        expense_date: row.expense_date || null,
+        amount: parseNumber(row.amount),
+        comment: row.comment || null,
+        category: row.comment || null,
+      })),
+      syncChildCollection('payment_schedules', clientId, draft.originalSchedules, draft.schedules, (row) => ({
+        due_date: row.due_date || null,
+        planned_amount: parseNumber(row.planned_amount),
+        status: row.status || 'planned',
+        note: row.note || null,
+      })),
+    ]);
 
-    await syncChildCollection('payment_schedules', clientId, draft.originalSchedules, draft.schedules, (row) => ({
-      due_date: row.due_date || null,
-      planned_amount: parseNumber(row.planned_amount),
-      status: row.status || 'planned',
-      note: row.note || null,
-    }));
-
-    showToast('Карточка клиента сохранена.', 'success');
+    const bundle = await fetchClientBundle(clientId);
+    patchClientBundle(bundle.client, bundle.payments, bundle.expenses, bundle.schedules);
     closeModal('client-modal');
     state.clientDraft = null;
-    await loadAllData();
+    renderAll();
+    showToast('Карточка клиента сохранена.', 'success');
+    loadAllData({ silent: true });
   } catch (error) {
     console.error(error);
     showToast(`Ошибка сохранения клиента: ${error.message || error}`, 'error', 6000);
   }
 }
 
+async function fetchClientBundle(clientId) {
+  const [clientRes, paymentsRes, expensesRes, schedulesRes] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', clientId).eq('workspace_key', state.workspaceKey).single(),
+    supabase.from('payments').select('*').eq('client_id', clientId).eq('workspace_key', state.workspaceKey).order('payment_date', { ascending: false }),
+    supabase.from('expenses').select('*').eq('client_id', clientId).eq('workspace_key', state.workspaceKey).order('expense_date', { ascending: false }),
+    supabase.from('payment_schedules').select('*').eq('client_id', clientId).eq('workspace_key', state.workspaceKey).order('due_date', { ascending: true }),
+  ]);
+
+  const responses = [clientRes, paymentsRes, expensesRes, schedulesRes];
+  const firstError = responses.find((item) => item.error)?.error;
+  if (firstError) throw firstError;
+
+  return {
+    client: clientRes.data,
+    payments: paymentsRes.data || [],
+    expenses: expensesRes.data || [],
+    schedules: schedulesRes.data || [],
+  };
+}
+
+function patchClientBundle(client, payments, expenses, schedules) {
+  upsertStateItem('clients', client);
+  replaceRowsByClient('payments', client.id, payments);
+  replaceRowsByClient('expenses', client.id, expenses);
+  replaceRowsByClient('schedules', client.id, schedules);
+}
+
+function replaceRowsByClient(key, clientId, rows) {
+  state[key] = state[key].filter((item) => item.client_id !== clientId).concat(rows);
+}
+
+function upsertStateItem(key, item) {
+  state[key] = state[key].some((row) => row.id === item.id)
+    ? state[key].map((row) => row.id === item.id ? item : row)
+    : [item, ...state[key]];
+}
+
 async function syncChildCollection(tableName, clientId, originalRows, currentRows, mapper) {
   const originalIds = new Set(originalRows.filter((row) => row.id).map((row) => row.id));
   const currentIds = new Set(currentRows.filter((row) => row.id).map((row) => row.id));
   const toDelete = [...originalIds].filter((id) => !currentIds.has(id));
+  const toInsert = currentRows.filter((row) => !row.id).map((row) => ({ client_id: clientId, workspace_key: state.workspaceKey, ...mapper(row) }));
+  const toUpdate = currentRows.filter((row) => row.id);
 
-  for (const id of toDelete) {
-    const { error } = await supabase.from(tableName).delete().eq('id', id);
-    if (error) throw error;
+  const tasks = [];
+
+  if (toDelete.length) {
+    tasks.push(
+      supabase.from(tableName).delete().in('id', toDelete).eq('workspace_key', state.workspaceKey)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+    );
   }
 
-  for (const row of currentRows) {
-    const payload = { client_id: clientId, ...mapper(row) };
-    if (row.id) {
-      const { error } = await supabase.from(tableName).update(payload).eq('id', row.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase.from(tableName).insert(payload);
-      if (error) throw error;
-    }
+  if (toInsert.length) {
+    tasks.push(
+      supabase.from(tableName).insert(toInsert)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+    );
   }
+
+  toUpdate.forEach((row) => {
+    const payload = { client_id: clientId, workspace_key: state.workspaceKey, ...mapper(row) };
+    tasks.push(
+      supabase.from(tableName).update(payload).eq('id', row.id).eq('workspace_key', state.workspaceKey)
+        .then(({ error }) => {
+          if (error) throw error;
+        })
+    );
+  });
+
+  await Promise.all(tasks);
 }
 
 async function archiveClientById(clientId, options = {}) {
@@ -898,15 +1203,22 @@ async function archiveClientById(clientId, options = {}) {
   if (!confirmed) return;
 
   try {
-    const { error } = await supabase
+    const patch = { case_status: 'archived', case_completed_at: new Date().toISOString() };
+    const { data, error } = await supabase
       .from('clients')
-      .update({ case_status: 'archived', case_completed_at: new Date().toISOString() })
-      .eq('id', clientId);
+      .update(patch)
+      .eq('id', clientId)
+      .eq('workspace_key', state.workspaceKey)
+      .select()
+      .single();
     if (error) throw error;
+
+    upsertStateItem('clients', data);
+    renderAll();
     showToast('Дело перенесено в архив.', 'success');
     if (options.closeModal) closeModal('client-modal');
-    await loadAllData();
     switchSection('archive');
+    loadAllData({ silent: true });
   } catch (error) {
     showToast(`Не удалось архивировать дело: ${error.message || error}`, 'error');
   }
@@ -919,15 +1231,20 @@ async function archiveCurrentClient() {
 async function restoreCurrentClient() {
   if (!supabase || !state.currentClientId) return;
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('clients')
       .update({ case_status: 'active', case_completed_at: null })
-      .eq('id', state.currentClientId);
+      .eq('id', state.currentClientId)
+      .eq('workspace_key', state.workspaceKey)
+      .select()
+      .single();
     if (error) throw error;
+    upsertStateItem('clients', data);
     showToast('Дело возвращено из архива.', 'success');
     closeModal('client-modal');
-    await loadAllData();
+    renderAll();
     switchSection('clients');
+    loadAllData({ silent: true });
   } catch (error) {
     showToast(`Не удалось вернуть дело: ${error.message || error}`, 'error');
   }
@@ -945,6 +1262,7 @@ async function saveEvent() {
 
   try {
     const payload = {
+      workspace_key: state.workspaceKey,
       title: eventFields.title.value.trim(),
       client_id: eventFields.client_id.value || null,
       event_date: eventFields.event_date.value || null,
@@ -952,17 +1270,29 @@ async function saveEvent() {
       description: eventFields.description.value || null,
     };
 
+    let saved;
     if (state.currentEventId) {
-      const { error } = await supabase.from('events').update(payload).eq('id', state.currentEventId);
+      const { data, error } = await supabase
+        .from('events')
+        .update(payload)
+        .eq('id', state.currentEventId)
+        .eq('workspace_key', state.workspaceKey)
+        .select()
+        .single();
       if (error) throw error;
+      saved = data;
     } else {
-      const { error } = await supabase.from('events').insert(payload);
+      const { data, error } = await supabase.from('events').insert(payload).select().single();
       if (error) throw error;
+      saved = data;
     }
 
-    showToast('Событие сохранено.', 'success');
+    upsertStateItem('events', saved);
+    state.events.sort((a, b) => `${a.event_date || ''} ${a.event_time || ''}`.localeCompare(`${b.event_date || ''} ${b.event_time || ''}`));
     closeModal('event-modal');
-    await loadAllData();
+    renderAll();
+    showToast('Событие сохранено.', 'success');
+    loadAllData({ silent: true });
   } catch (error) {
     showToast(`Ошибка сохранения события: ${error.message || error}`, 'error');
   }
@@ -974,12 +1304,85 @@ async function deleteEvent(eventId) {
   if (!confirmed) return;
 
   try {
-    const { error } = await supabase.from('events').delete().eq('id', eventId);
+    const { error } = await supabase.from('events').delete().eq('id', eventId).eq('workspace_key', state.workspaceKey);
     if (error) throw error;
+    state.events = state.events.filter((item) => item.id !== eventId);
+    renderAll();
     showToast('Событие удалено.', 'success');
-    await loadAllData();
+    loadAllData({ silent: true });
   } catch (error) {
     showToast(`Не удалось удалить событие: ${error.message || error}`, 'error');
+  }
+}
+
+async function saveCashTransaction() {
+  if (!supabase) {
+    showToast('Сначала подключите Supabase в файле config.js.', 'error');
+    return;
+  }
+
+  if (!cashFields.entry_date.value) {
+    showToast('Укажите дату операции.', 'error');
+    return;
+  }
+
+  if (parseNumber(cashFields.amount.value) <= 0) {
+    showToast('Укажите сумму больше нуля.', 'error');
+    return;
+  }
+
+  try {
+    const payload = {
+      workspace_key: state.workspaceKey,
+      entry_date: cashFields.entry_date.value,
+      flow_type: cashFields.flow_type.value,
+      category: cashFields.category.value.trim() || null,
+      amount: parseNumber(cashFields.amount.value),
+      description: cashFields.description.value.trim() || null,
+    };
+
+    let saved;
+    if (state.currentCashId) {
+      const { data, error } = await supabase
+        .from('cash_transactions')
+        .update(payload)
+        .eq('id', state.currentCashId)
+        .eq('workspace_key', state.workspaceKey)
+        .select()
+        .single();
+      if (error) throw error;
+      saved = data;
+    } else {
+      const { data, error } = await supabase.from('cash_transactions').insert(payload).select().single();
+      if (error) throw error;
+      saved = data;
+    }
+
+    upsertStateItem('cashTransactions', saved);
+    state.cashTransactions.sort((a, b) => `${b.entry_date || ''} ${b.created_at || ''}`.localeCompare(`${a.entry_date || ''} ${a.created_at || ''}`));
+    closeModal('cash-modal');
+    renderAll();
+    showToast('Операция сохранена.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось сохранить операцию: ${error.message || error}`, 'error');
+  }
+}
+
+async function deleteCashTransaction(cashId) {
+  if (!supabase || !cashId) return;
+  const confirmed = window.confirm('Удалить эту операцию?');
+  if (!confirmed) return;
+
+  try {
+    const { error } = await supabase.from('cash_transactions').delete().eq('id', cashId).eq('workspace_key', state.workspaceKey);
+    if (error) throw error;
+    state.cashTransactions = state.cashTransactions.filter((row) => row.id !== cashId);
+    renderAll();
+    showToast('Операция удалена.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось удалить операцию: ${error.message || error}`, 'error');
   }
 }
 
@@ -1018,9 +1421,28 @@ function handleBodyClick(event) {
     return;
   }
 
+  const addEventDate = target.closest('[data-add-event-date]')?.dataset.addEventDate;
+  if (addEventDate) {
+    openEventModal(null, addEventDate);
+    return;
+  }
+
+  const editCashId = target.closest('[data-edit-cash]')?.dataset.editCash;
+  if (editCashId) {
+    openCashModal(editCashId);
+    return;
+  }
+
+  const deleteCashId = target.closest('[data-delete-cash]')?.dataset.deleteCash;
+  if (deleteCashId) {
+    deleteCashTransaction(deleteCashId);
+    return;
+  }
+
   const calendarDate = target.closest('[data-calendar-date]')?.dataset.calendarDate;
   if (calendarDate) {
     renderCalendarDayEvents(calendarDate);
+    renderCalendar();
     if (state.activeSection !== 'dashboard') switchSection('dashboard');
     return;
   }
@@ -1049,6 +1471,70 @@ function getDraftSummary(draft) {
   const expenses = (draft.expenses || []).reduce((sum, item) => sum + parseNumber(item.amount), 0);
   const debt = Math.max(contract - paid, 0);
   return { contract, paid, expenses, debt };
+}
+
+function getCashMetrics() {
+  const contractIncome = state.payments.reduce((sum, row) => sum + parseNumber(row.amount), 0);
+  const officeExpenses = state.expenses.reduce((sum, row) => sum + parseNumber(row.amount), 0);
+  const otherIncome = state.cashTransactions
+    .filter((row) => row.flow_type === 'income')
+    .reduce((sum, row) => sum + parseNumber(row.amount), 0);
+  const otherExpense = state.cashTransactions
+    .filter((row) => row.flow_type === 'expense')
+    .reduce((sum, row) => sum + parseNumber(row.amount), 0);
+  const otherNet = otherIncome - otherExpense;
+  const balance = contractIncome + otherIncome - officeExpenses - otherExpense;
+  return { contractIncome, officeExpenses, otherIncome, otherExpense, otherNet, balance };
+}
+
+function getCashLedgerRows() {
+  const paymentRows = state.payments.map((row) => ({
+    id: row.id,
+    date: row.payment_date,
+    flowType: 'income',
+    signedAmount: parseNumber(row.amount),
+    sourceType: 'payment',
+    sourceLabel: 'Оплата по договору',
+    title: 'Поступление по договору',
+    category: 'Договор',
+    clientId: row.client_id,
+    clientName: getClientName(row.client_id),
+    description: row.comment || 'Оплата клиента',
+    createdAt: row.created_at,
+  }));
+
+  const expenseRows = state.expenses.map((row) => ({
+    id: row.id,
+    date: row.expense_date,
+    flowType: 'expense',
+    signedAmount: -parseNumber(row.amount),
+    sourceType: 'expense',
+    sourceLabel: 'Расход конторы',
+    title: 'Расход по делу',
+    category: row.category || 'Расход',
+    clientId: row.client_id,
+    clientName: getClientName(row.client_id),
+    description: row.comment || 'Дополнительный расход',
+    createdAt: row.created_at,
+  }));
+
+  const cashRows = state.cashTransactions.map((row) => ({
+    id: row.id,
+    date: row.entry_date,
+    flowType: row.flow_type,
+    signedAmount: row.flow_type === 'income' ? parseNumber(row.amount) : -parseNumber(row.amount),
+    sourceType: 'cash',
+    sourceLabel: 'Иная операция',
+    title: row.flow_type === 'income' ? 'Иной доход' : 'Иной расход',
+    category: row.category || 'Без категории',
+    clientId: null,
+    clientName: '',
+    description: row.description || row.category || 'Операция по кассе',
+    createdAt: row.created_at,
+  }));
+
+  return paymentRows.concat(expenseRows, cashRows)
+    .sort((a, b) => `${b.date || ''} ${b.createdAt || ''}`.localeCompare(`${a.date || ''} ${a.createdAt || ''}`));
 }
 
 function getClientName(clientId) {
@@ -1085,6 +1571,12 @@ function formatMoney(value) {
     currency: 'RUB',
     maximumFractionDigits: 2,
   }).format(parseNumber(value));
+}
+
+function formatSignedMoney(value) {
+  const num = parseNumber(value);
+  const prefix = num > 0 ? '+ ' : num < 0 ? '− ' : '';
+  return `${prefix}${formatMoney(Math.abs(num))}`;
 }
 
 function formatDate(value) {
@@ -1203,4 +1695,23 @@ function escapeAttr(value) {
 function shorten(value, maxLength) {
   if (!value) return '';
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function capitalize(value) {
+  return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
+}
+
+async function buildWorkspaceKey(password) {
+  const normalized = String(password || '').trim();
+  if (!normalized) return '';
+
+  if (window.crypto?.subtle?.digest) {
+    const encoded = new TextEncoder().encode(`law-crm::${normalized}`);
+    const buffer = await window.crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(buffer))
+      .map((value) => value.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  return `fallback-${btoa(unescape(encodeURIComponent(normalized)))}`;
 }

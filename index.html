@@ -18,7 +18,7 @@
       <div class="eyebrow">Доступ к программе</div>
       <h1>Право CRM</h1>
       <p class="muted">
-        Введите пароль для входа в программу.
+        Введите пароль для входа в программу. Один и тот же пароль открывает один и тот же набор данных на разных устройствах.
       </p>
       <form id="password-form" class="stack gap-16">
         <div>
@@ -28,7 +28,7 @@
         <button class="btn btn-primary" type="submit">Войти</button>
       </form>
       <p class="small warning-text">
-        Это базовая защита интерфейса для GitHub Pages. Для полноценной защиты позже лучше подключить Supabase Auth.
+        Сейчас пароль также определяет общее рабочее пространство. Для полноценной безопасной авторизации позже лучше подключить Supabase Auth.
       </p>
     </div>
   </div>
@@ -45,12 +45,13 @@
       <div>
         <div class="brand-mark">⚖️</div>
         <div class="brand-title">Право CRM</div>
-        <div class="brand-subtitle">Клиенты, оплаты и календарь</div>
+        <div class="brand-subtitle">Клиенты, касса и календарь</div>
       </div>
 
       <nav class="menu">
         <button class="menu-item active" data-section="dashboard">Главная</button>
         <button class="menu-item" data-section="clients">Клиенты</button>
+        <button class="menu-item" data-section="cash">Касса</button>
         <button class="menu-item" data-section="archive">Архив</button>
         <button class="menu-item" data-section="events">События</button>
       </nav>
@@ -59,6 +60,7 @@
         <button id="refresh-btn" class="btn btn-secondary btn-block">Обновить данные</button>
         <button id="open-client-btn" class="btn btn-primary btn-block">Новый клиент</button>
         <button id="open-event-btn" class="btn btn-secondary btn-block">Новое событие</button>
+        <button id="open-cash-btn" class="btn btn-secondary btn-block">Новая операция</button>
       </div>
     </aside>
 
@@ -67,7 +69,7 @@
         <div>
           <div class="eyebrow">Юридическая практика</div>
           <h2 id="section-title">Главная</h2>
-          <p id="section-subtitle" class="muted">Обзор дел, платежей и ближайших событий.</p>
+          <p id="section-subtitle" class="muted">Обзор дел, платежей, кассы и ближайших событий.</p>
         </div>
         <div class="header-actions">
           <div class="badge-soft" id="today-label"></div>
@@ -77,7 +79,7 @@
       <section id="dashboard-section" class="section-panel">
         <div class="stats-grid" id="stats-grid"></div>
 
-        <div class="dashboard-grid">
+        <div class="dashboard-grid dashboard-grid-3">
           <div class="glass-card card-large">
             <div class="card-head">
               <div>
@@ -97,18 +99,28 @@
             </div>
             <div id="upcoming-events" class="list-stack"></div>
           </div>
+
+          <div class="glass-card card-large">
+            <div class="card-head">
+              <div>
+                <h3>Касса и операции</h3>
+                <p class="muted">Поступления по договорам и иные доходы/расходы.</p>
+              </div>
+            </div>
+            <div id="recent-cash-ops" class="list-stack"></div>
+          </div>
         </div>
 
         <div class="glass-card card-large">
           <div class="card-head calendar-head">
             <div>
               <h3>Календарь событий</h3>
-              <p class="muted">Главный календарь по датам.</p>
+              <p class="muted">События отображаются прямо в датах. Нажмите на день, чтобы раскрыть все записи.</p>
             </div>
             <div class="calendar-controls">
-              <button id="prev-month-btn" class="btn btn-secondary btn-sm">←</button>
+              <button id="prev-month-btn" class="btn btn-secondary btn-sm" type="button">←</button>
               <div id="calendar-title" class="calendar-title"></div>
-              <button id="next-month-btn" class="btn btn-secondary btn-sm">→</button>
+              <button id="next-month-btn" class="btn btn-secondary btn-sm" type="button">→</button>
             </div>
           </div>
           <div id="calendar-grid" class="calendar-grid"></div>
@@ -132,6 +144,38 @@
             </div>
           </div>
           <div id="clients-table" class="table-wrapper"></div>
+        </div>
+      </section>
+
+      <section id="cash-section" class="section-panel hidden">
+        <div class="cash-header-grid">
+          <div class="glass-card card-large compact-card" id="cash-balance-card"></div>
+          <div class="glass-card card-large compact-card">
+            <div class="section-inline-head">
+              <div>
+                <h4>Структура кассы</h4>
+                <p class="muted">Касса учитывает оплаты по договорам, расходы конторы и иные операции.</p>
+              </div>
+            </div>
+            <div id="cash-summary-grid" class="cash-summary-grid"></div>
+          </div>
+        </div>
+
+        <div class="glass-card card-large">
+          <div class="toolbar">
+            <div class="toolbar-group grow">
+              <input id="cash-search" type="search" placeholder="Поиск по категории, описанию или клиенту" />
+            </div>
+            <div class="toolbar-group">
+              <select id="cash-filter">
+                <option value="all">Все операции</option>
+                <option value="income">Только доходы</option>
+                <option value="expense">Только расходы</option>
+              </select>
+              <button id="open-cash-inline-btn" class="btn btn-primary btn-sm" type="button">Добавить операцию</button>
+            </div>
+          </div>
+          <div id="cash-table" class="table-wrapper"></div>
         </div>
       </section>
 
@@ -208,7 +252,7 @@
 
         <section class="glass-subcard">
           <h4>Финансовые условия</h4>
-          <div class="form-grid cols-3">
+          <div class="form-grid cols-4">
             <div>
               <label for="client-contract-amount">Сумма договора</label>
               <input id="client-contract-amount" type="number" min="0" step="0.01" />
@@ -320,6 +364,52 @@
         <div class="modal-foot-right">
           <button class="btn btn-secondary" type="button" data-close-modal="event-modal">Отмена</button>
           <button id="save-event-btn" class="btn btn-primary" type="button">Сохранить</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="cash-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Касса</div>
+          <h3 id="cash-modal-title">Новая операция</h3>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="cash-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid cols-2">
+          <div>
+            <label for="cash-date">Дата операции</label>
+            <input id="cash-date" type="date" required />
+          </div>
+          <div>
+            <label for="cash-type">Тип операции</label>
+            <select id="cash-type">
+              <option value="income">Доход</option>
+              <option value="expense">Расход</option>
+            </select>
+          </div>
+          <div>
+            <label for="cash-category">Категория</label>
+            <input id="cash-category" type="text" placeholder="Например: аренда, иное поступление" />
+          </div>
+          <div>
+            <label for="cash-amount">Сумма</label>
+            <input id="cash-amount" type="number" min="0" step="0.01" required />
+          </div>
+          <div class="full-width">
+            <label for="cash-description">Описание</label>
+            <textarea id="cash-description" rows="4" placeholder="Подробности по операции"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div></div>
+        <div class="modal-foot-right">
+          <button class="btn btn-secondary" type="button" data-close-modal="cash-modal">Отмена</button>
+          <button id="save-cash-btn" class="btn btn-primary" type="button">Сохранить</button>
         </div>
       </div>
     </form>
