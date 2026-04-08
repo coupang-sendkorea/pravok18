@@ -432,37 +432,49 @@ function renderClientsTable() {
   }
 
   els.clientsTable.innerHTML = `
-    <table class="table">
+    <table class="table clients-table">
       <thead>
         <tr>
-          <th>Клиент</th>
-          <th>Дело</th>
+          <th>ФИО клиента</th>
+          <th>Контактная информация</th>
+          <th>Дело / услуга</th>
           <th>Сумма договора</th>
-          <th>Оплачено</th>
-          <th>Долг</th>
-          <th>Расходы</th>
           <th>Способ оплаты</th>
           <th>Срок оплаты</th>
-          <th>Напоминание</th>
+          <th>Сумма фактически оплаченная</th>
+          <th>Сумма остатка (долга)</th>
+          <th>Дополнительные расходы конторы</th>
+          <th>Напоминание об оплате</th>
+          <th>Архив</th>
         </tr>
       </thead>
       <tbody>
         ${clients.map((client) => {
           const summary = getClientSummary(client.id);
+          const contacts = [client.phone, client.email, client.messenger, client.address].filter(Boolean);
           return `
             <tr>
               <td>
                 <div class="clickable-name" data-open-client="${client.id}">${escapeHtml(client.full_name)}</div>
-                <div class="mini-meta">${escapeHtml(client.phone || client.email || 'Контакты не заполнены')}</div>
               </td>
-              <td>${escapeHtml(client.case_title || '—')}</td>
+              <td>
+                <div class="cell-stack">
+                  ${contacts.length ? contacts.map((item) => `<div class="mini-meta">${escapeHtml(item)}</div>`).join('') : '<div class="mini-meta">Контакты не заполнены</div>'}
+                </div>
+              </td>
+              <td>
+                <div>${escapeHtml(client.case_title || '—')}</div>
+              </td>
               <td>${escapeHtml(formatMoney(parseNumber(client.contract_amount)))}</td>
+              <td>${escapeHtml(client.payment_type || '—')}</td>
+              <td>${escapeHtml(formatDate(client.payment_deadline))}</td>
               <td>${escapeHtml(formatMoney(summary.paid))}</td>
               <td>${renderDebtPill(summary.debt)}</td>
               <td>${escapeHtml(formatMoney(summary.expenses))}</td>
-              <td>${escapeHtml(client.payment_type || '—')}</td>
-              <td>${escapeHtml(formatDate(client.payment_deadline))}</td>
               <td>${escapeHtml(formatDate(client.payment_reminder_date))}</td>
+              <td>
+                <button class="btn btn-danger btn-sm btn-nowrap" data-archive-id="${client.id}">Убрать в архив</button>
+              </td>
             </tr>
           `;
         }).join('')}
@@ -880,8 +892,8 @@ async function syncChildCollection(tableName, clientId, originalRows, currentRow
   }
 }
 
-async function archiveCurrentClient() {
-  if (!supabase || !state.currentClientId) return;
+async function archiveClientById(clientId, options = {}) {
+  if (!supabase || !clientId) return;
   const confirmed = window.confirm('Переместить дело в архив?');
   if (!confirmed) return;
 
@@ -889,15 +901,19 @@ async function archiveCurrentClient() {
     const { error } = await supabase
       .from('clients')
       .update({ case_status: 'archived', case_completed_at: new Date().toISOString() })
-      .eq('id', state.currentClientId);
+      .eq('id', clientId);
     if (error) throw error;
     showToast('Дело перенесено в архив.', 'success');
-    closeModal('client-modal');
+    if (options.closeModal) closeModal('client-modal');
     await loadAllData();
     switchSection('archive');
   } catch (error) {
     showToast(`Не удалось архивировать дело: ${error.message || error}`, 'error');
   }
+}
+
+async function archiveCurrentClient() {
+  await archiveClientById(state.currentClientId, { closeModal: true });
 }
 
 async function restoreCurrentClient() {
@@ -981,6 +997,12 @@ function handleBodyClick(event) {
   const restoreId = target.closest('[data-restore-id]')?.dataset.restoreId;
   if (restoreId) {
     openClientModal(restoreId);
+    return;
+  }
+
+  const archiveId = target.closest('[data-archive-id]')?.dataset.archiveId;
+  if (archiveId) {
+    archiveClientById(archiveId);
     return;
   }
 
