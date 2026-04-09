@@ -295,6 +295,52 @@
         </section>
 
         <section class="glass-subcard">
+          <h4>Данные для договора</h4>
+          <div class="form-grid cols-4">
+            <div>
+              <label for="client-contract-number">Номер договора</label>
+              <input id="client-contract-number" type="text" placeholder="Например: 12/2026" />
+            </div>
+            <div>
+              <label for="client-contract-date">Дата договора</label>
+              <input id="client-contract-date" type="date" />
+            </div>
+            <div>
+              <label for="client-contract-city">Место заключения</label>
+              <input id="client-contract-city" type="text" placeholder="Удмуртская Республика, г. Ижевск" />
+            </div>
+            <div>
+              <label for="client-contract-payment-days">Срок оплаты в днях</label>
+              <input id="client-contract-payment-days" type="number" min="0" step="1" placeholder="Например: 5" />
+            </div>
+            <div>
+              <label for="client-customer-birth-date">Дата рождения</label>
+              <input id="client-customer-birth-date" type="date" />
+            </div>
+            <div class="full-width">
+              <label for="client-registration-address">Адрес регистрации</label>
+              <input id="client-registration-address" type="text" placeholder="Полный адрес регистрации клиента" />
+            </div>
+            <div>
+              <label for="client-passport-number">Паспорт</label>
+              <input id="client-passport-number" type="text" placeholder="Серия и номер" />
+            </div>
+            <div class="full-width">
+              <label for="client-passport-issued-by">Кем выдан паспорт</label>
+              <input id="client-passport-issued-by" type="text" placeholder="Орган, выдавший паспорт" />
+            </div>
+            <div>
+              <label for="client-passport-division-code">Код подразделения</label>
+              <input id="client-passport-division-code" type="text" placeholder="000-000" />
+            </div>
+            <div class="full-width">
+              <label for="client-service-description">Формулировка услуги для договора</label>
+              <textarea id="client-service-description" rows="3" placeholder="Например: о взыскании страхового возмещения и неустойки"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="glass-subcard">
           <h4>Финансовые условия</h4>
           <div class="form-grid cols-4">
             <div>
@@ -361,6 +407,7 @@
           <button id="restore-client-btn" class="btn btn-secondary hidden" type="button">Вернуть из архива</button>
         </div>
         <div class="modal-foot-right">
+          <button id="generate-contract-btn" class="btn btn-secondary" type="button">Сформировать договор .docx</button>
           <button class="btn btn-secondary" type="button" data-close-modal="client-modal">Отмена</button>
           <button id="save-client-btn" class="btn btn-primary" type="button">Сохранить</button>
         </div>

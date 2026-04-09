@@ -1,6 +1,6 @@
 window.APP_CONFIG = {
-  SUPABASE_URL: 'https://your-project-ref.supabase.co',
-  SUPABASE_KEY: 'sb_publishable_xxx_or_anon_key',
+  SUPABASE_URL: 'PASTE_SUPABASE_URL_HERE',
+  SUPABASE_KEY: 'PASTE_SUPABASE_PUBLISHABLE_KEY_HERE',
   APP_PASSWORD: 'pravo888',
-  APP_TITLE: 'Право CRM'
+  APP_TITLE: 'Право CRM',
 };

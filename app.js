@@ -36,6 +36,8 @@ const state = {
   workspaceKey: null,
 };
 
+let docxLibPromise = null;
+
 const els = {
   passwordGate: $('#password-gate'),
   passwordForm: $('#password-form'),
@@ -91,6 +93,7 @@ const els = {
   prevMonthBtn: $('#prev-month-btn'),
   nextMonthBtn: $('#next-month-btn'),
   saveClientBtn: $('#save-client-btn'),
+  generateContractBtn: $('#generate-contract-btn'),
   archiveClientBtn: $('#archive-client-btn'),
   restoreClientBtn: $('#restore-client-btn'),
   saveEventBtn: $('#save-event-btn'),
@@ -107,6 +110,16 @@ const clientFields = {
   messenger: $('#client-messenger'),
   address: $('#client-address'),
   notes: $('#client-notes'),
+  contract_number: $('#client-contract-number'),
+  contract_date: $('#client-contract-date'),
+  contract_city: $('#client-contract-city'),
+  contract_payment_days: $('#client-contract-payment-days'),
+  customer_birth_date: $('#client-customer-birth-date'),
+  registration_address: $('#client-registration-address'),
+  passport_number: $('#client-passport-number'),
+  passport_issued_by: $('#client-passport-issued-by'),
+  passport_division_code: $('#client-passport-division-code'),
+  service_description: $('#client-service-description'),
   contract_amount: $('#client-contract-amount'),
   payment_type: $('#client-payment-type'),
   payment_deadline: $('#client-payment-deadline'),
@@ -219,6 +232,7 @@ function bindGlobalEvents() {
   $('#add-expense-btn').addEventListener('click', () => addDraftRow('expenses'));
   $('#add-schedule-btn').addEventListener('click', () => addDraftRow('schedules'));
   els.saveClientBtn.addEventListener('click', saveClient);
+  els.generateContractBtn?.addEventListener('click', generateContractForDraft);
   els.archiveClientBtn.addEventListener('click', archiveCurrentClient);
   els.restoreClientBtn.addEventListener('click', restoreCurrentClient);
   els.saveEventBtn.addEventListener('click', saveEvent);
@@ -1058,6 +1072,16 @@ function openClientModal(clientId = null) {
     messenger: client?.messenger || '',
     address: client?.address || '',
     notes: client?.notes || '',
+    contract_number: client?.contract_number || '',
+    contract_date: client?.contract_date || toDateInputValue(new Date()),
+    contract_city: client?.contract_city || 'Удмуртская Республика, г. Ижевск',
+    contract_payment_days: client?.contract_payment_days ?? '',
+    customer_birth_date: client?.customer_birth_date || '',
+    registration_address: client?.registration_address || client?.address || '',
+    passport_number: client?.passport_number || '',
+    passport_issued_by: client?.passport_issued_by || '',
+    passport_division_code: client?.passport_division_code || '',
+    service_description: client?.service_description || client?.case_title || '',
     contract_amount: parseNumber(client?.contract_amount),
     payment_type: client?.payment_type || '100% предоплата',
     payment_deadline: client?.payment_deadline || '',
@@ -1319,6 +1343,16 @@ async function saveClient() {
       messenger: draft.messenger || null,
       address: draft.address || null,
       notes: draft.notes || null,
+      contract_number: draft.contract_number || null,
+      contract_date: draft.contract_date || null,
+      contract_city: draft.contract_city || null,
+      contract_payment_days: parseNumber(draft.contract_payment_days) || null,
+      customer_birth_date: draft.customer_birth_date || null,
+      registration_address: draft.registration_address || null,
+      passport_number: draft.passport_number || null,
+      passport_issued_by: draft.passport_issued_by || null,
+      passport_division_code: draft.passport_division_code || null,
+      service_description: draft.service_description || null,
       contract_amount: parseNumber(draft.contract_amount),
       payment_type: draft.payment_type || null,
       payment_deadline: draft.payment_deadline || null,
@@ -2338,6 +2372,376 @@ function shorten(value, maxLength) {
 
 function capitalize(value) {
   return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
+}
+
+async function generateContractForDraft() {
+  const draft = state.clientDraft;
+  if (!draft) return;
+
+  const missing = getContractMissingFields(draft);
+  if (missing.length) {
+    showToast(`Для договора заполните: ${missing.join(', ')}.`, 'error', 6500);
+    return;
+  }
+
+  try {
+    const docx = await getDocxLib();
+    const document = buildContractDocument(docx, draft);
+    const blob = await docx.Packer.toBlob(document);
+    downloadBlob(blob, createContractFilename(draft));
+    showToast('Договор сформирован и скачан в формате Word.', 'success', 4500);
+  } catch (error) {
+    console.error(error);
+    showToast(`Не удалось сформировать договор: ${error.message || error}`, 'error', 7000);
+  }
+}
+
+async function getDocxLib() {
+  if (!docxLibPromise) {
+    docxLibPromise = import('https://cdn.jsdelivr.net/npm/docx@8.5.0/+esm');
+  }
+  return docxLibPromise;
+}
+
+function getContractMissingFields(draft) {
+  const checks = [
+    ['ФИО клиента', draft.full_name],
+    ['номер договора', draft.contract_number],
+    ['дату договора', draft.contract_date],
+    ['предмет услуги для договора', draft.service_description || draft.case_title],
+    ['сумму договора', parseNumber(draft.contract_amount) > 0 ? 'ok' : ''],
+    ['срок оплаты в днях', getContractPaymentDays(draft)],
+    ['дату рождения клиента', draft.customer_birth_date],
+    ['адрес регистрации', draft.registration_address],
+    ['паспорт клиента', draft.passport_number],
+    ['кем выдан паспорт', draft.passport_issued_by],
+    ['код подразделения', draft.passport_division_code],
+    ['телефон клиента', draft.phone],
+  ];
+  return checks.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+}
+
+function getContractPaymentDays(draft) {
+  const explicit = Math.round(parseNumber(draft.contract_payment_days));
+  if (explicit > 0) return explicit;
+
+  const start = parseDateSafe(draft.contract_date);
+  const end = parseDateSafe(draft.payment_deadline);
+  if (start && end) {
+    const diff = Math.round((end.getTime() - start.getTime()) / 86400000);
+    if (diff > 0) return diff;
+  }
+
+  return 0;
+}
+
+function buildContractDocument(docx, draft) {
+  const {
+    AlignmentType, BorderStyle, Document, HeadingLevel, Paragraph, Table, TableCell, TableRow, TextRun, WidthType,
+  } = docx;
+
+  const invisible = { style: BorderStyle.NONE, color: 'FFFFFF', size: 0 };
+  const contractDate = parseDateSafe(draft.contract_date);
+  const contractDay = contractDate ? String(contractDate.getDate()).padStart(2, '0') : '____';
+  const contractMonth = contractDate ? monthNameRu(contractDate) : '___________';
+  const contractYear = contractDate ? String(contractDate.getFullYear()) : '2026';
+  const amount = parseNumber(draft.contract_amount);
+  const amountDigits = formatNumberPlain(amount);
+  const amountWords = rublesToWords(amount);
+  const paymentDays = getContractPaymentDays(draft);
+  const paymentDaysWords = numberToWordsRu(paymentDays);
+  const serviceDescription = draft.service_description || draft.case_title || '____________________________________________';
+  const paymentMode = paymentTypeContractLabel(draft.payment_type);
+  const registrationAddress = draft.registration_address || draft.address || '______________________________________';
+
+  const p = (text, options = {}) => new Paragraph({
+    alignment: options.alignment || AlignmentType.JUSTIFIED,
+    spacing: { after: options.after ?? 120, before: options.before ?? 0, line: 300 },
+    indent: options.indent === false ? undefined : { firstLine: 420 },
+    children: (options.children || [new TextRun({ text: String(text || ''), bold: !!options.bold, italics: !!options.italics })]),
+  });
+
+  const titleP = (text) => new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 120, line: 300 },
+    children: [new TextRun({ text, bold: true })],
+  });
+
+  const sectionP = (text) => new Paragraph({
+    heading: HeadingLevel.HEADING_2,
+    alignment: AlignmentType.LEFT,
+    spacing: { before: 180, after: 100, line: 300 },
+    children: [new TextRun({ text, bold: true })],
+  });
+
+  const sideTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
+            children: [p(draft.contract_city || 'Удмуртская Республика, г. Ижевск', { indent: false, after: 0 })],
+          }),
+          new TableCell({
+            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              spacing: { after: 0, line: 300 },
+              children: [new TextRun({ text: `«${contractDay}» ${contractMonth} ${contractYear} г.` })],
+            })],
+          }),
+        ],
+      })],
+  });
+
+  const signaturesTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
+            children: [
+              p('Исполнитель:', { indent: false, bold: true }),
+              p('ООО «Контакт+»', { indent: false }),
+              p('Юридический и почтовый адрес: 426009, УР, г. Ижевск, ул. Совхозная, д.56', { indent: false }),
+              p('ИНН 1832028955, КПП 184001001', { indent: false }),
+              p('ОГРН 10218014338922, дата присвоения 11.11.02 г.', { indent: false }),
+              p('р/с 40702810729020000314', { indent: false }),
+              p('в филиале «Нижегородский» ОАО «АЛЬФА-БАНК»', { indent: false }),
+              p('к/с 30101810200000000824, БИК 042202824', { indent: false }),
+              p('Директор', { indent: false }),
+              p('_____________________/Шайхулова К.Д./', { indent: false, after: 60 }),
+              p('М.п.', { indent: false, after: 0 }),
+            ],
+          }),
+          new TableCell({
+            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
+            children: [
+              p('Заказчик:', { indent: false, bold: true }),
+              p(draft.full_name || '______________________________________', { indent: false }),
+              p(`Дата рождения ${formatDateLongDots(draft.customer_birth_date)}`, { indent: false }),
+              p(`Адрес регистрации: ${registrationAddress}`, { indent: false }),
+              p(`Паспорт ${draft.passport_number || '_______________________________'}`, { indent: false }),
+              p(`Выдан ${draft.passport_issued_by || '_________________________________'}`, { indent: false }),
+              p(`Код подразделения ${draft.passport_division_code || '______________________'}`, { indent: false }),
+              p(`Тел. ${draft.phone || '_______________________________'}`, { indent: false }),
+              p('', { indent: false, after: 120 }),
+              p(`_____________________/ ${draft.full_name || '________________'}/`, { indent: false, after: 0 }),
+            ],
+          }),
+        ],
+      })],
+  });
+
+  return new Document({
+    creator: 'OpenAI',
+    title: `Договор №${draft.contract_number || ''}`,
+    description: 'Договор оказания юридических услуг',
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Times New Roman', size: 24 },
+          paragraph: { spacing: { line: 300 } },
+        },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1000, right: 1000, bottom: 1000, left: 1200 },
+        },
+      },
+      children: [
+        titleP(`ДОГОВОР №${draft.contract_number || '____'}`),
+        titleP('об оказании юридических услуг'),
+        p('', { indent: false, after: 40 }),
+        sideTable,
+        p('', { indent: false, after: 60 }),
+        p(`${draft.full_name}, именуемый в дальнейшем «Заказчик, Доверитель», с одной стороны, и Общество с ограниченной ответственностью «Контакт+», именуемое в дальнейшем «Исполнитель», в лице директора Шайхуловой Карины Дмитриевны, действующего на основании Устава, с другой стороны, именуемые в дальнейшем «Стороны», заключили настоящий Договор о нижеследующем:`),
+
+        sectionP('1. Предмет договора'),
+        p(`1.1. Заказчик поручает, а Исполнитель принимает на себя обязательство по оказанию следующих юридических услуг по составлению искового заявления/досудебной претензии ${serviceDescription}.`),
+        p('1.2. В предмет настоящего соглашения включены следующие виды и формы оказания юридической помощи:'),
+        p('- консультация Заказчика;'),
+        p('- изучение и анализ документов, материалов по делу, подбор, изучение и анализ нормативно-правовых актов, судебной практики, методических рекомендаций, специальной литературы в целях защиты прав и законных интересов Заказчика;'),
+        p('- подготовка иска/претензии и его подача в суд, подготовка и подача необходимых возражений, письменных пояснений, ходатайств и иных процессуальных документов, надобность в которых возникнет в ходе судопроизводства по делу;'),
+        p('- представление интересов Заказчика в суде первой инстанции при рассмотрении и разрешении дела по существу.'),
+
+        sectionP('2. Права и обязанности Сторон'),
+        p('2.1. Заказчик вправе:'),
+        p('- вносить предложения, получать консультации, информацию о ходе и результатах работы, а также знакомиться с правовой позицией, подготовленными и полученными документами;'),
+        p('- в любое время отказаться от выполнения договора с компенсацией расходов Исполнителю и уплатой вознаграждения соразмерно выполненной работе.'),
+        p('2.2. Заказчик обязан:'),
+        p('- оплатить выполненные Исполнителем работы (оказанные услуги) в соответствии с условиями настоящего договора;'),
+        p('- обеспечить своевременное предоставление Исполнителю всей информации и документации, необходимой для выполнения задания (оказания услуг);'),
+        p('- при необходимости обязан предоставить должным образом заверенную доверенность;'),
+        p('- четко формулировать задания для Исполнителя в письменном виде или устной форме;'),
+        p('- оказывать всяческое содействие в выполнении Исполнителем его обязанностей;'),
+        p('- заблаговременно (не менее чем за 5 дней) уведомлять Исполнителя о датах судебных заседаний, полученных от суда и лиц, участвующих в деле, документах и предоставлять документы, указанные в определении суда.'),
+        p('2.3. Исполнитель вправе:'),
+        p('- затребовать и получать от Заказчика всю необходимую для выполнения поручения информацию, документы и материалы, относящиеся к предмету настоящего договора;'),
+        p('- требовать соразмерного увеличения размера вознаграждения в случае существенного увеличения объема работ (услуг) по сравнению с предполагаемым на момент заключения соглашения.'),
+        p('2.4. Исполнитель обязан:'),
+        p('- выслушать Заказчика, изучить представленные документы и проинформировать Заказчика о возможных вариантах развития ситуаций;'),
+        p('- подготовить необходимые документы в срок, предусмотренный ГПК РФ;'),
+        p('- выполнить работы в полном объеме, порядке и сроки, предусмотренные законодательством;'),
+        p('- честно, разумно и добросовестно отстаивать права и законные интересы Доверителя. Использовать все не запрещенные законодательством РФ средства и способы для защиты прав и законных интересов Доверителя, при этом точно и неукоснительно соблюдать требования действующего законодательства РФ;'),
+        p('- сообщать Заказчику информацию о ходе и результатах выполнения настоящего Договора, сведения, имеющие существенное значение по делу.'),
+
+        sectionP('3. Порядок выполнения работ (оказания услуг)'),
+        p('3.1. Исполнитель самостоятельно определяет и назначает ответственного за осуществление работы/услуг из числа своих сотрудников, при этом имеет право без уведомления Заказчика заменить работника без обоснования причин.'),
+        p('3.2. Исполнитель вправе самостоятельно определять позицию, форму и варианты выполнения работы (оказания услуг), при этом учитывая пожелания Заказчика.'),
+        p('3.2.1. Исполнитель не несет ответственности за последствия, связанные с представлением Заказчиком документов, не соответствующих действительности.'),
+        p('3.3. Все работы по делу проводятся Исполнителем в удобное для него время, но на основании сроков, изложенных в соответствующих Законах либо по договоренности с Заказчиком.'),
+        p('3.5. Возражения Заказчика по объему и качеству выполненных работ (оказания услуг) должны быть обоснованными и содержать конкретные ссылки на несоответствие выполненных работ/оказанных услуг. При этом Стороны обязаны немедленно согласовать условия устранения данной претензии.'),
+
+        sectionP('4. Стоимость работ и порядок расчетов'),
+        p(`4.1. Стоимость услуг по договору определяется в сумме ${amountDigits} (${amountWords}) и оплачивается следующим образом:`),
+        p(`- ${paymentMode};`),
+        p(`- в течение ${paymentDays} (${paymentDaysWords}) дней с момента подписания настоящего договора.`),
+        p('Названная сумма при любом исходе дела обратно не возвращается, считается соразмерной оплатой, без вознаграждения.'),
+        p('4.2. Согласованная между сторонами в п. 4.1 Договора стоимость услуг производится за оказанную Исполнителем по договору юридическую помощь независимо от положительного результата по делу.'),
+        p('4.3. В случае усложнения или увеличения объема работ/услуг по настоящему договору, по согласованию сторон размер оплаты за оказание юридической помощи, предусмотренный п. 4.1 настоящего Соглашения, подлежит увеличению по соглашению сторон.'),
+        p('4.4. Оплата судебных издержек (госпошлина, экспертиза, заключение специалиста и т.д.) производится Заказчиком за свой счет и не включается в стоимость услуг/работ по договору.'),
+        p('4.5. При необходимости выезда Исполнителя за пределы города Ижевска в связи с выполнением настоящего договора Заказчик возмещает фактически понесенные расходы на проезд, проживание, питание.'),
+
+        sectionP('5. Форс-мажор'),
+        p('5.1. Ни одна из Сторон не будет нести ответственности за полное или частичное невыполнение любых своих обязательств, если невыполнение будет являться прямым следствием обстоятельств непреодолимого (форс-мажорного) характера, находящихся вне контроля Сторон, возникших после заключения Договора.'),
+        p('5.2. Под форс-мажорными обстоятельствами понимаются стихийные бедствия, войны, катастрофы, землетрясения и иные природные катаклизмы.'),
+
+        sectionP('6. Расторжение договора'),
+        p('6.1. Договор может быть расторгнут по инициативе Заказчика в случаях, предусмотренных действующим законодательством РФ.'),
+        p('6.2. Договор может быть расторгнут по инициативе Исполнителя в случае:'),
+        p('а) не обеспечения Исполнителя Заказчиком информацией, требуемой для выполнения Исполнителем своих обязательств по настоящему Договору;'),
+        p('б) создания Заказчиком условий, препятствующих выполнению Исполнителем принятых по Договору обязательств;'),
+        p('в) в иных случаях, предусмотренных действующим законодательством.'),
+        p('6.3. Сторона, выступившая инициатором расторжения Договора, обязана уведомить другую сторону о прекращении работ не менее чем за 3 (три) рабочих дня до предполагаемой даты прекращения работ/услуг.'),
+        p('6.4. С момента получения Стороной извещения о расторжении Договора Исполнитель не имеет права продолжать работу/услуги по Договору, а Заказчик не вправе требовать продолжения работ/услуг.'),
+
+        sectionP('7. Другие условия'),
+        p('7.1. Настоящий договор считается заключенным и вступает в действие с момента подписания его Сторонами и действует в течение 1 (одного) года. В части неисполненных обязательств Договор продолжает действовать и в случае его расторжения до полного и надлежащего исполнения Сторонами этих обязательств.'),
+        p('7.2. Стороны обязуются все возникающие разногласия решать путем переговоров. При невозможности урегулирования сторонами возникших разногласий спор разрешается в судебном порядке согласно законодательству РФ.'),
+        p('7.3. Во всех иных случаях, не упомянутых в настоящем Договоре, стороны руководствуются положениями и нормами действующего законодательства.'),
+        p('7.4. Настоящий договор составлен в двух экземплярах, по одному для каждой стороны, оба экземпляра имеют одинаковую юридическую силу.'),
+
+        sectionP('8. Адреса, реквизиты и подписи Сторон'),
+        signaturesTable,
+      ],
+    }],
+  });
+}
+
+function createContractFilename(draft) {
+  const base = `Договор_${(draft.contract_number || 'без_номера').toString()}_${(draft.full_name || 'клиент').toString()}`;
+  return `${sanitizeFilename(base)}.docx`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function sanitizeFilename(value) {
+  return String(value || 'document')
+    .replace(/[\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 160);
+}
+
+function paymentTypeContractLabel(value) {
+  return {
+    '100% предоплата': 'авансовым путем',
+    'частями': 'частями',
+    'по графику': 'по графику платежей',
+  }[value] || 'в согласованном сторонами порядке';
+}
+
+function monthNameRu(date) {
+  return ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'][date.getMonth()];
+}
+
+function formatDateLongDots(value) {
+  if (!value) return '_________________________';
+  const date = parseDateSafe(value);
+  if (!date) return '_________________________';
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+}
+
+function formatNumberPlain(value) {
+  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(parseNumber(value));
+}
+
+function rublesToWords(value) {
+  const amount = Math.abs(parseNumber(value));
+  const rubles = Math.floor(amount);
+  const kopeks = Math.round((amount - rubles) * 100);
+  let result = `${numberToWordsRu(rubles)} ${pluralRu(rubles, 'рубль', 'рубля', 'рублей')}`;
+  if (kopeks > 0) {
+    result += ` ${String(kopeks).padStart(2, '0')} ${pluralRu(kopeks, 'копейка', 'копейки', 'копеек')}`;
+  }
+  return result;
+}
+
+function numberToWordsRu(value) {
+  const num = Math.abs(Math.trunc(parseNumber(value)));
+  if (num === 0) return 'ноль';
+
+  const unitsMale = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+  const unitsFemale = ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+  const teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'];
+  const tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'];
+  const hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'];
+  const orders = [
+    { one: '', few: '', many: '', female: false },
+    { one: 'тысяча', few: 'тысячи', many: 'тысяч', female: true },
+    { one: 'миллион', few: 'миллиона', many: 'миллионов', female: false },
+    { one: 'миллиард', few: 'миллиарда', many: 'миллиардов', female: false },
+  ];
+
+  const chunks = [];
+  let rest = num;
+  while (rest > 0) {
+    chunks.push(rest % 1000);
+    rest = Math.floor(rest / 1000);
+  }
+
+  const words = [];
+  for (let i = chunks.length - 1; i >= 0; i -= 1) {
+    const chunk = chunks[i];
+    if (!chunk) continue;
+    const order = orders[i] || orders[orders.length - 1];
+    const genderUnits = order.female ? unitsFemale : unitsMale;
+    const h = Math.floor(chunk / 100);
+    const t = Math.floor((chunk % 100) / 10);
+    const u = chunk % 10;
+    if (h) words.push(hundreds[h]);
+    if (t === 1) {
+      words.push(teens[u]);
+    } else {
+      if (t > 1) words.push(tens[t]);
+      if (u > 0) words.push(genderUnits[u]);
+    }
+    if (i > 0) words.push(pluralRu(chunk, order.one, order.few, order.many));
+  }
+
+  return words.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function pluralRu(number, one, few, many) {
+  const n = Math.abs(number) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) return many;
+  if (n1 > 1 && n1 < 5) return few;
+  if (n1 === 1) return one;
+  return many;
 }
 
 async function buildWorkspaceKey(password) {

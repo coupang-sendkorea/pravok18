@@ -24,6 +24,16 @@ create table if not exists public.clients (
   messenger text,
   address text,
   notes text,
+  contract_number text,
+  contract_date date,
+  contract_city text,
+  contract_payment_days integer,
+  customer_birth_date date,
+  registration_address text,
+  passport_number text,
+  passport_issued_by text,
+  passport_division_code text,
+  service_description text,
   contract_amount numeric(12,2) not null default 0,
   payment_type text check (payment_type in ('100% предоплата', 'частями', 'по графику')),
   payment_deadline date,
@@ -119,6 +129,16 @@ create table if not exists public.personal_records (
 );
 
 alter table public.clients add column if not exists workspace_key text;
+alter table public.clients add column if not exists contract_number text;
+alter table public.clients add column if not exists contract_date date;
+alter table public.clients add column if not exists contract_city text;
+alter table public.clients add column if not exists contract_payment_days integer;
+alter table public.clients add column if not exists customer_birth_date date;
+alter table public.clients add column if not exists registration_address text;
+alter table public.clients add column if not exists passport_number text;
+alter table public.clients add column if not exists passport_issued_by text;
+alter table public.clients add column if not exists passport_division_code text;
+alter table public.clients add column if not exists service_description text;
 alter table public.payments add column if not exists workspace_key text;
 alter table public.payments add column if not exists payment_channel text default 'cashless';
 alter table public.expenses add column if not exists workspace_key text;
