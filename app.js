@@ -22,12 +22,16 @@ const state = {
   schedules: [],
   events: [],
   cashTransactions: [],
+  loans: [],
+  personalRecords: [],
   activeSection: 'dashboard',
   calendarMonth: startOfMonth(new Date()),
   selectedCalendarDate: toDateInputValue(new Date()),
   currentClientId: null,
   currentEventId: null,
   currentCashId: null,
+  currentLoanId: null,
+  currentPersonalId: null,
   clientDraft: null,
   workspaceKey: null,
 };
@@ -56,14 +60,22 @@ const els = {
   cashBalanceCard: $('#cash-balance-card'),
   cashSummaryGrid: $('#cash-summary-grid'),
   cashTable: $('#cash-table'),
+  loansOverview: $('#loans-overview'),
+  personalSummary: $('#personal-summary'),
+  loansTable: $('#loans-table'),
+  personalTable: $('#personal-table'),
   archiveTable: $('#archive-table'),
   eventsTable: $('#events-table'),
   clientModal: $('#client-modal'),
   eventModal: $('#event-modal'),
   cashModal: $('#cash-modal'),
+  loanModal: $('#loan-modal'),
+  personalModal: $('#personal-modal'),
   clientModalTitle: $('#client-modal-title'),
   eventModalTitle: $('#event-modal-title'),
   cashModalTitle: $('#cash-modal-title'),
+  loanModalTitle: $('#loan-modal-title'),
+  personalModalTitle: $('#personal-modal-title'),
   financeSummary: $('#client-finance-summary'),
   paymentsList: $('#payments-list'),
   expensesList: $('#expenses-list'),
@@ -74,6 +86,8 @@ const els = {
   openEventBtn: $('#open-event-btn'),
   openCashBtn: $('#open-cash-btn'),
   openCashInlineBtn: $('#open-cash-inline-btn'),
+  openLoanBtn: $('#open-loan-btn'),
+  openPersonalBtn: $('#open-personal-btn'),
   prevMonthBtn: $('#prev-month-btn'),
   nextMonthBtn: $('#next-month-btn'),
   saveClientBtn: $('#save-client-btn'),
@@ -81,6 +95,8 @@ const els = {
   restoreClientBtn: $('#restore-client-btn'),
   saveEventBtn: $('#save-event-btn'),
   saveCashBtn: $('#save-cash-btn'),
+  saveLoanBtn: $('#save-loan-btn'),
+  savePersonalBtn: $('#save-personal-btn'),
 };
 
 const clientFields = {
@@ -108,9 +124,31 @@ const eventFields = {
 const cashFields = {
   entry_date: $('#cash-date'),
   flow_type: $('#cash-type'),
+  account_type: $('#cash-account-type'),
+  purpose: $('#cash-purpose'),
+  related_loan_id: $('#cash-loan-id'),
   category: $('#cash-category'),
   amount: $('#cash-amount'),
   description: $('#cash-description'),
+};
+
+const loanFields = {
+  lender_name: $('#loan-lender-name'),
+  loan_title: $('#loan-title'),
+  issue_date: $('#loan-issue-date'),
+  due_date: $('#loan-due-date'),
+  principal_amount: $('#loan-amount'),
+  received_account_type: $('#loan-account-type'),
+  description: $('#loan-description'),
+};
+
+const personalFields = {
+  record_date: $('#personal-date'),
+  person_name: $('#personal-person'),
+  record_type: $('#personal-type'),
+  account_type: $('#personal-account-type'),
+  amount: $('#personal-amount'),
+  description: $('#personal-description'),
 };
 
 init();
@@ -163,6 +201,8 @@ function bindGlobalEvents() {
   els.openEventBtn.addEventListener('click', () => openEventModal());
   els.openCashBtn.addEventListener('click', () => openCashModal());
   els.openCashInlineBtn?.addEventListener('click', () => openCashModal());
+  els.openLoanBtn?.addEventListener('click', () => openLoanModal());
+  els.openPersonalBtn?.addEventListener('click', () => openPersonalModal());
   els.prevMonthBtn.addEventListener('click', () => {
     state.calendarMonth = addMonths(state.calendarMonth, -1);
     renderCalendar();
@@ -183,6 +223,10 @@ function bindGlobalEvents() {
   els.restoreClientBtn.addEventListener('click', restoreCurrentClient);
   els.saveEventBtn.addEventListener('click', saveEvent);
   els.saveCashBtn?.addEventListener('click', saveCashTransaction);
+  els.saveLoanBtn?.addEventListener('click', saveLoan);
+  els.savePersonalBtn?.addEventListener('click', savePersonalRecord);
+  cashFields.purpose?.addEventListener('change', syncCashPurposeUI);
+  personalFields.record_type?.addEventListener('change', syncPersonalTypeUI);
 }
 
 async function unlockApp() {
@@ -214,16 +258,18 @@ async function loadAllData({ silent = true } = {}) {
     if (!silent) showToast('Обновляю данные…', 'info', 1400);
     await migrateLegacyWorkspaceIfNeeded();
 
-    const [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes] = await Promise.all([
+    const [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes, loansRes, personalRes] = await Promise.all([
       supabase.from('clients').select('*').eq('workspace_key', state.workspaceKey).order('created_at', { ascending: false }),
       supabase.from('payments').select('*').eq('workspace_key', state.workspaceKey).order('payment_date', { ascending: false }),
       supabase.from('expenses').select('*').eq('workspace_key', state.workspaceKey).order('expense_date', { ascending: false }),
       supabase.from('payment_schedules').select('*').eq('workspace_key', state.workspaceKey).order('due_date', { ascending: true }),
       supabase.from('events').select('*').eq('workspace_key', state.workspaceKey).order('event_date', { ascending: true }).order('event_time', { ascending: true }),
       supabase.from('cash_transactions').select('*').eq('workspace_key', state.workspaceKey).order('entry_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('loans').select('*').eq('workspace_key', state.workspaceKey).order('issue_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('personal_records').select('*').eq('workspace_key', state.workspaceKey).order('record_date', { ascending: false }).order('created_at', { ascending: false }),
     ]);
 
-    const responses = [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes];
+    const responses = [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes, loansRes, personalRes];
     const firstError = responses.find((response) => response.error)?.error;
     if (firstError) throw firstError;
 
@@ -233,12 +279,14 @@ async function loadAllData({ silent = true } = {}) {
     state.schedules = schedulesRes.data || [];
     state.events = eventsRes.data || [];
     state.cashTransactions = cashRes.data || [];
+    state.loans = loansRes.data || [];
+    state.personalRecords = personalRes.data || [];
 
     renderAll();
   } catch (error) {
     console.error(error);
     const message = error?.message || String(error);
-    if (message.includes('workspace_key') || message.includes('cash_transactions')) {
+    if (message.includes('workspace_key') || message.includes('cash_transactions') || message.includes('loans') || message.includes('personal_records') || message.includes('payment_channel') || message.includes('account_type')) {
       showToast('Нужно обновить базу Supabase: еще раз выполните новый файл supabase-schema.sql.', 'error', 8000);
       return;
     }
@@ -289,9 +337,12 @@ function renderAll() {
   renderCalendar();
   renderClientsTable();
   renderCashSection();
+  renderLoansTable();
+  renderPersonalTable();
   renderArchiveTable();
   renderEventsTable();
   populateEventClientOptions();
+  populateLoanOptions();
 }
 
 function renderStats() {
@@ -308,6 +359,8 @@ function renderStats() {
   }, { contract: 0, paid: 0, debt: 0, expenses: 0 });
 
   const cash = getCashMetrics();
+  const loans = getLoanMetrics();
+  const personal = getPersonalMetrics();
   const upcomingPayments = buildPaymentAlerts().filter((item) => item.kind !== 'overdue').length;
   const upcomingEventsCount = getUpcomingEvents(14).length;
 
@@ -316,9 +369,9 @@ function renderStats() {
     { label: 'Сумма договоров', value: formatMoney(totals.contract), subtext: 'Сумма договоров фиксируется отдельно' },
     { label: 'Оплачено по договорам', value: formatMoney(totals.paid), subtext: 'Считается по внесённым оплатам' },
     { label: 'Остаток долга', value: formatMoney(totals.debt), subtext: 'Уменьшается автоматически' },
-    { label: 'Расходы конторы', value: formatMoney(totals.expenses), subtext: 'Почта, госпошлина и иные затраты' },
-    { label: 'Иные доходы / расходы', value: formatSignedMoney(cash.otherNet), subtext: 'Операции вне договоров' },
-    { label: 'Касса', value: formatSignedMoney(cash.balance), subtext: 'Может быть и отрицательной' },
+    { label: 'Касса общая', value: formatSignedMoney(cash.balance), subtext: `Наличные: ${formatSignedMoney(cash.cashBalance)} · Безнал: ${formatSignedMoney(cash.cashlessBalance)}` },
+    { label: 'Займы к погашению', value: formatMoney(loans.outstandingTotal), subtext: `Активных займов: ${loans.activeCount}` },
+    { label: 'Личные расчёты', value: formatSignedMoney(personal.netCompanyLiability), subtext: 'Плюс: компания должна · минус: должны компании' },
     { label: 'Ближайшие события', value: upcomingEventsCount, subtext: `Напоминаний по оплатам: ${upcomingPayments}` },
   ];
 
@@ -432,6 +485,10 @@ function renderRecentCashOps() {
       <div class="split-line">
         <strong>${escapeHtml(row.title)}</strong>
         <span class="money-inline ${row.flowType === 'income' ? 'income' : 'expense'}">${escapeHtml(formatSignedMoney(row.signedAmount))}</span>
+      </div>
+      <div class="mini-inline-pills">
+        <span class="pill soft">${escapeHtml(accountTypeLabel(row.accountType))}</span>
+        <span class="pill ${row.flowType === 'income' ? 'ok' : 'danger'}">${escapeHtml(row.sourceLabel)}</span>
       </div>
       <div class="muted small">${escapeHtml(formatDate(row.date))}</div>
       <div class="muted small line-clamp-2">${escapeHtml(row.description)}</div>
@@ -633,10 +690,23 @@ function renderClientsTable() {
 
 function renderCashSection() {
   const cash = getCashMetrics();
+  const loans = getLoanMetrics();
+  const personal = getPersonalMetrics();
+
   els.cashBalanceCard.innerHTML = `
     <div class="eyebrow">Касса</div>
     <div class="cash-balance ${cash.balance < 0 ? 'negative' : 'positive'}">${escapeHtml(formatSignedMoney(cash.balance))}</div>
-    <div class="muted">Баланс может быть отрицательным. В расчёт входят оплаты по договорам, расходы конторы и иные операции.</div>
+    <div class="cash-balance-split">
+      <div class="capsule compact-capsule small-capsule">
+        <div class="capsule-label">Наличный расчёт</div>
+        <div class="capsule-value">${escapeHtml(formatSignedMoney(cash.cashBalance))}</div>
+      </div>
+      <div class="capsule compact-capsule small-capsule">
+        <div class="capsule-label">Безналичный расчёт</div>
+        <div class="capsule-value">${escapeHtml(formatSignedMoney(cash.cashlessBalance))}</div>
+      </div>
+    </div>
+    <div class="muted">В расчёт входят оплаты по договорам, займы, погашения, личные расчёты и иные операции.</div>
   `;
 
   const summaryItems = [
@@ -644,6 +714,8 @@ function renderCashSection() {
     { label: 'Расходы конторы', value: formatMoney(cash.officeExpenses) },
     { label: 'Иные доходы', value: formatMoney(cash.otherIncome) },
     { label: 'Иные расходы', value: formatMoney(cash.otherExpense) },
+    { label: 'Полученные займы', value: formatMoney(loans.principalTotal) },
+    { label: 'К погашению', value: formatMoney(loans.outstandingTotal) },
   ];
   els.cashSummaryGrid.innerHTML = summaryItems.map((item) => `
     <div class="capsule compact-capsule">
@@ -651,6 +723,39 @@ function renderCashSection() {
       <div class="capsule-value">${escapeHtml(item.value)}</div>
     </div>
   `).join('');
+
+  if (!loans.items.length) {
+    els.loansOverview.innerHTML = emptyCard('Активных займов нет.');
+  } else {
+    els.loansOverview.innerHTML = loans.items.slice(0, 4).map((loan) => `
+      <article class="event-card compact-event-card">
+        <div class="split-line">
+          <strong>${escapeHtml(loan.lender_name)}</strong>
+          <span class="pill warn">${escapeHtml(formatMoney(loan.outstanding))}</span>
+        </div>
+        <div class="muted small">${escapeHtml(loan.loan_title || 'Без названия')}</div>
+        <div class="muted small">Срок: ${escapeHtml(formatDate(loan.due_date))} · ${escapeHtml(accountTypeLabel(loan.received_account_type))}</div>
+      </article>
+    `).join('');
+  }
+
+  els.personalSummary.innerHTML = ['Ильвар', 'Рустам'].map((person) => {
+    const amount = personal.balances[person] || 0;
+    const statusText = amount > 0
+      ? `Компания должна ${person.toLowerCase()}у`
+      : amount < 0
+        ? `${person} должен компании`
+        : 'Расчёты закрыты';
+    return `
+      <article class="event-card compact-event-card">
+        <div class="split-line">
+          <strong>${escapeHtml(person)}</strong>
+          <span class="pill ${amount >= 0 ? 'ok' : 'danger'}">${escapeHtml(formatSignedMoney(amount))}</span>
+        </div>
+        <div class="muted small">${escapeHtml(statusText)}</div>
+      </article>
+    `;
+  }).join('');
 
   const search = (els.cashSearch?.value || '').trim().toLowerCase();
   const filter = els.cashFilter?.value || 'all';
@@ -660,7 +765,7 @@ function renderCashSection() {
     rows = rows.filter((row) => row.flowType === filter);
   }
   if (search) {
-    rows = rows.filter((row) => [row.title, row.description, row.clientName, row.category]
+    rows = rows.filter((row) => [row.title, row.description, row.clientName, row.category, row.sourceLabel, accountTypeLabel(row.accountType)]
       .some((value) => String(value || '').toLowerCase().includes(search)));
   }
 
@@ -674,6 +779,7 @@ function renderCashSection() {
       <thead>
         <tr>
           <th>Дата</th>
+          <th>Касса</th>
           <th>Тип</th>
           <th>Источник</th>
           <th>Категория</th>
@@ -687,6 +793,7 @@ function renderCashSection() {
         ${rows.map((row) => `
           <tr>
             <td>${escapeHtml(formatDate(row.date))}</td>
+            <td><span class="pill soft">${escapeHtml(accountTypeLabel(row.accountType))}</span></td>
             <td><span class="pill ${row.flowType === 'income' ? 'ok' : 'danger'}">${escapeHtml(row.flowType === 'income' ? 'Доход' : 'Расход')}</span></td>
             <td>${escapeHtml(row.sourceLabel)}</td>
             <td>${escapeHtml(row.category || '—')}</td>
@@ -700,11 +807,109 @@ function renderCashSection() {
                     <button class="btn btn-secondary btn-sm" type="button" data-edit-cash="${row.id}">Изменить</button>
                     <button class="btn btn-danger btn-sm" type="button" data-delete-cash="${row.id}">Удалить</button>
                   `
-                  : `<button class="btn btn-secondary btn-sm" type="button" data-open-client="${row.clientId}">Открыть дело</button>`}
+                  : row.sourceType === 'loan'
+                    ? `<button class="btn btn-secondary btn-sm" type="button" data-repay-loan="${row.id}">Погасить</button>`
+                    : row.clientId
+                      ? `<button class="btn btn-secondary btn-sm" type="button" data-open-client="${row.clientId}">Открыть дело</button>`
+                      : '<span class="muted small">—</span>'}
               </div>
             </td>
           </tr>
         `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderLoansTable() {
+  const metrics = getLoanMetrics();
+  if (!metrics.items.length) {
+    els.loansTable.innerHTML = emptyCard('Займов пока нет.');
+    return;
+  }
+
+  els.loansTable.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Кредитор</th>
+          <th>Пометка</th>
+          <th>Дата получения</th>
+          <th>Срок возврата</th>
+          <th>Касса</th>
+          <th>Сумма займа</th>
+          <th>Погашено</th>
+          <th>Остаток</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${metrics.items.map((loan) => `
+          <tr>
+            <td>${escapeHtml(loan.lender_name)}</td>
+            <td><div class="wrap-cell">${escapeHtml(loan.loan_title || '—')}</div></td>
+            <td>${escapeHtml(formatDate(loan.issue_date))}</td>
+            <td>${escapeHtml(formatDate(loan.due_date))}</td>
+            <td>${escapeHtml(accountTypeLabel(loan.received_account_type))}</td>
+            <td>${escapeHtml(formatMoney(loan.principal_amount))}</td>
+            <td>${escapeHtml(formatMoney(loan.repaid))}</td>
+            <td>${renderDebtPill(loan.outstanding)}</td>
+            <td>
+              <div class="toolbar-group">
+                <button class="btn btn-secondary btn-sm" type="button" data-edit-loan="${loan.id}">Изменить</button>
+                <button class="btn btn-secondary btn-sm" type="button" data-repay-loan="${loan.id}">Погасить</button>
+                <button class="btn btn-danger btn-sm" type="button" data-delete-loan="${loan.id}">Удалить</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderPersonalTable() {
+  if (!state.personalRecords.length) {
+    els.personalTable.innerHTML = emptyCard('Личные расчёты пока не добавлены.');
+    return;
+  }
+
+  const rows = [...state.personalRecords].sort((a, b) => `${b.record_date || ''} ${b.created_at || ''}`.localeCompare(`${a.record_date || ''} ${a.created_at || ''}`));
+  els.personalTable.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Сотрудник</th>
+          <th>Тип записи</th>
+          <th>Касса</th>
+          <th>Сумма</th>
+          <th>Для нас</th>
+          <th>Описание</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => {
+          const effect = getPersonalRecordEffect(row);
+          return `
+            <tr>
+              <td>${escapeHtml(formatDate(row.record_date))}</td>
+              <td>${escapeHtml(row.person_name)}</td>
+              <td>${escapeHtml(personalRecordTypeLabel(row.record_type))}</td>
+              <td>${escapeHtml(accountTypeLabel(row.account_type))}</td>
+              <td>${escapeHtml(formatMoney(row.amount))}</td>
+              <td><span class="pill ${effect.balanceDelta >= 0 ? 'ok' : 'danger'}">${escapeHtml(formatSignedMoney(effect.balanceDelta))}</span></td>
+              <td><div class="wrap-cell">${escapeHtml(row.description || '—')}</div></td>
+              <td>
+                <div class="toolbar-group">
+                  <button class="btn btn-secondary btn-sm" type="button" data-edit-personal="${row.id}">Изменить</button>
+                  <button class="btn btn-danger btn-sm" type="button" data-delete-personal="${row.id}">Удалить</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
       </tbody>
     </table>
   `;
@@ -795,6 +1000,14 @@ function populateEventClientOptions() {
   els.eventClientId.innerHTML = options.join('');
 }
 
+function populateLoanOptions() {
+  if (!cashFields.related_loan_id) return;
+  const loans = getLoanMetrics().items;
+  const options = ['<option value="">Без привязки</option>']
+    .concat(loans.map((loan) => `<option value="${loan.id}">${escapeHtml(`${loan.lender_name} — остаток ${formatMoney(loan.outstanding)}`)}</option>`));
+  cashFields.related_loan_id.innerHTML = options.join('');
+}
+
 function switchSection(section) {
   state.activeSection = section;
   const map = {
@@ -808,7 +1021,7 @@ function switchSection(section) {
     },
     cash: {
       title: 'Касса',
-      subtitle: 'Общий баланс, иные доходы/расходы и движение денег.',
+      subtitle: 'Наличный и безналичный баланс, займы, личные расчёты и движение денег.',
     },
     archive: {
       title: 'Архив',
@@ -832,8 +1045,8 @@ function switchSection(section) {
 
 function openClientModal(clientId = null) {
   const client = clientId ? state.clients.find((item) => item.id === clientId) : null;
-  const payments = client ? state.payments.filter((item) => item.client_id === clientId) : [];
-  const expenses = client ? state.expenses.filter((item) => item.client_id === clientId) : [];
+  const payments = client ? state.payments.filter((item) => item.client_id === clientId).map((item) => ({ ...item, payment_channel: item.payment_channel || 'cashless' })) : [];
+  const expenses = client ? state.expenses.filter((item) => item.client_id === clientId).map((item) => ({ ...item, payment_channel: item.payment_channel || 'cashless' })) : [];
   const schedules = client ? state.schedules.filter((item) => item.client_id === clientId) : [];
 
   state.clientDraft = {
@@ -883,16 +1096,48 @@ function openEventModal(eventId = null, dateString = null) {
   els.eventModal.showModal();
 }
 
-function openCashModal(cashId = null) {
+function openCashModal(cashId = null, preset = {}) {
   const item = cashId ? state.cashTransactions.find((row) => row.id === cashId) : null;
   state.currentCashId = item?.id || null;
   els.cashModalTitle.textContent = item ? 'Изменение операции' : 'Новая операция';
-  cashFields.entry_date.value = item?.entry_date || toDateInputValue(new Date());
-  cashFields.flow_type.value = item?.flow_type || 'income';
-  cashFields.category.value = item?.category || '';
-  cashFields.amount.value = item ? String(parseNumber(item.amount)) : '';
-  cashFields.description.value = item?.description || '';
+  cashFields.entry_date.value = item?.entry_date || preset.entry_date || toDateInputValue(new Date());
+  cashFields.flow_type.value = item?.flow_type || preset.flow_type || 'income';
+  cashFields.account_type.value = item?.account_type || preset.account_type || 'cashless';
+  cashFields.purpose.value = item?.purpose || preset.purpose || 'other';
+  cashFields.category.value = item?.category || preset.category || '';
+  cashFields.related_loan_id.value = item?.related_loan_id || preset.related_loan_id || '';
+  cashFields.amount.value = item ? String(parseNumber(item.amount)) : preset.amount ? String(parseNumber(preset.amount)) : '';
+  cashFields.description.value = item?.description || preset.description || '';
+  syncCashPurposeUI();
   els.cashModal.showModal();
+}
+
+function openLoanModal(loanId = null) {
+  const item = loanId ? state.loans.find((row) => row.id === loanId) : null;
+  state.currentLoanId = item?.id || null;
+  els.loanModalTitle.textContent = item ? 'Изменение займа' : 'Новый займ';
+  loanFields.lender_name.value = item?.lender_name || '';
+  loanFields.loan_title.value = item?.loan_title || '';
+  loanFields.issue_date.value = item?.issue_date || toDateInputValue(new Date());
+  loanFields.due_date.value = item?.due_date || '';
+  loanFields.principal_amount.value = item ? String(parseNumber(item.principal_amount)) : '';
+  loanFields.received_account_type.value = item?.received_account_type || 'cashless';
+  loanFields.description.value = item?.description || '';
+  els.loanModal.showModal();
+}
+
+function openPersonalModal(personalId = null) {
+  const item = personalId ? state.personalRecords.find((row) => row.id === personalId) : null;
+  state.currentPersonalId = item?.id || null;
+  els.personalModalTitle.textContent = item ? 'Изменение записи' : 'Новая запись';
+  personalFields.record_date.value = item?.record_date || toDateInputValue(new Date());
+  personalFields.person_name.value = item?.person_name || 'Ильвар';
+  personalFields.record_type.value = item?.record_type || 'spent_personal';
+  personalFields.account_type.value = item?.account_type || '';
+  personalFields.amount.value = item ? String(parseNumber(item.amount)) : '';
+  personalFields.description.value = item?.description || '';
+  syncPersonalTypeUI();
+  els.personalModal.showModal();
 }
 
 function renderClientFinanceSummary() {
@@ -922,11 +1167,14 @@ function renderClientDraftLists() {
   els.paymentsList.innerHTML = renderDraftCollection(
     draft.payments,
     'payments',
-    `<div class="mini-meta">Дата</div><div class="mini-meta">Сумма</div><div class="mini-meta">Комментарий</div><div></div>`,
+    `<div class="mini-meta">Дата</div><div class="mini-meta">Сумма</div><div class="mini-meta">Касса</div><div class="mini-meta">Комментарий</div><div></div>`,
     (row) => `
-      <div class="mini-row" data-row-type="payments" data-row-id="${row.id || row._tempId}">
+      <div class="mini-row five-cols" data-row-type="payments" data-row-id="${row.id || row._tempId}">
         <input type="date" data-row-field="payment_date" value="${escapeAttr(row.payment_date || toDateInputValue(new Date()))}" />
         <input type="number" min="0" step="0.01" data-row-field="amount" value="${escapeAttr(String(parseNumber(row.amount)))}" />
+        <select data-row-field="payment_channel">
+          ${['cashless', 'cash'].map((type) => `<option value="${type}" ${String(row.payment_channel || 'cashless') === type ? 'selected' : ''}>${accountTypeLabel(type)}</option>`).join('')}
+        </select>
         <input type="text" data-row-field="comment" value="${escapeAttr(row.comment || '')}" placeholder="Комментарий" />
         <button class="btn btn-danger btn-sm" type="button" data-delete-row="payments:${row.id || row._tempId}">Удалить</button>
       </div>
@@ -937,11 +1185,14 @@ function renderClientDraftLists() {
   els.expensesList.innerHTML = renderDraftCollection(
     draft.expenses,
     'expenses',
-    `<div class="mini-meta">Дата</div><div class="mini-meta">Сумма</div><div class="mini-meta">Комментарий</div><div></div>`,
+    `<div class="mini-meta">Дата</div><div class="mini-meta">Сумма</div><div class="mini-meta">Касса</div><div class="mini-meta">Комментарий</div><div></div>`,
     (row) => `
-      <div class="mini-row" data-row-type="expenses" data-row-id="${row.id || row._tempId}">
+      <div class="mini-row five-cols" data-row-type="expenses" data-row-id="${row.id || row._tempId}">
         <input type="date" data-row-field="expense_date" value="${escapeAttr(row.expense_date || toDateInputValue(new Date()))}" />
         <input type="number" min="0" step="0.01" data-row-field="amount" value="${escapeAttr(String(parseNumber(row.amount)))}" />
+        <select data-row-field="payment_channel">
+          ${['cashless', 'cash'].map((type) => `<option value="${type}" ${String(row.payment_channel || 'cashless') === type ? 'selected' : ''}>${accountTypeLabel(type)}</option>`).join('')}
+        </select>
         <input type="text" data-row-field="comment" value="${escapeAttr(row.comment || row.category || '')}" placeholder="Например: госпошлина" />
         <button class="btn btn-danger btn-sm" type="button" data-delete-row="expenses:${row.id || row._tempId}">Удалить</button>
       </div>
@@ -972,7 +1223,7 @@ function renderDraftCollection(rows, type, headerHtml, rowRenderer, emptyText) {
   if (!rows.length) return emptyCard(emptyText);
   return `
     <div class="mini-list" data-collection="${type}">
-      <div class="mini-row ${type === 'schedules' ? 'five-cols' : ''}">${headerHtml}</div>
+      <div class="mini-row ${(type === 'schedules' || type === 'payments' || type === 'expenses') ? 'five-cols' : ''}">${headerHtml}</div>
       ${rows.map(rowRenderer).join('')}
     </div>
   `;
@@ -987,6 +1238,7 @@ function addDraftRow(type) {
       _tempId: tempId,
       payment_date: toDateInputValue(new Date()),
       amount: 0,
+      payment_channel: 'cashless',
       comment: '',
     });
   }
@@ -995,6 +1247,7 @@ function addDraftRow(type) {
       _tempId: tempId,
       expense_date: toDateInputValue(new Date()),
       amount: 0,
+      payment_channel: 'cashless',
       comment: '',
       category: '',
     });
@@ -1099,11 +1352,13 @@ async function saveClient() {
       syncChildCollection('payments', clientId, draft.originalPayments, draft.payments, (row) => ({
         payment_date: row.payment_date || null,
         amount: parseNumber(row.amount),
+        payment_channel: row.payment_channel || 'cashless',
         comment: row.comment || null,
       })),
       syncChildCollection('expenses', clientId, draft.originalExpenses, draft.expenses, (row) => ({
         expense_date: row.expense_date || null,
         amount: parseNumber(row.amount),
+        payment_channel: row.payment_channel || 'cashless',
         comment: row.comment || null,
         category: row.comment || null,
       })),
@@ -1339,15 +1594,28 @@ async function saveCashTransaction() {
     return;
   }
 
+  if (cashFields.purpose.value === 'loan_repayment' && !cashFields.related_loan_id.value) {
+    showToast('Для погашения займа выберите нужный займ.', 'error');
+    return;
+  }
+
   try {
     const payload = {
       workspace_key: state.workspaceKey,
       entry_date: cashFields.entry_date.value,
       flow_type: cashFields.flow_type.value,
+      account_type: cashFields.account_type.value || 'cashless',
+      purpose: cashFields.purpose.value || 'other',
+      related_loan_id: cashFields.purpose.value === 'loan_repayment' ? (cashFields.related_loan_id.value || null) : null,
       category: cashFields.category.value.trim() || null,
       amount: parseNumber(cashFields.amount.value),
       description: cashFields.description.value.trim() || null,
     };
+
+    if (payload.purpose === 'loan_repayment') {
+      payload.flow_type = 'expense';
+      payload.category = payload.category || 'Погашение займа';
+    }
 
     let saved;
     if (state.currentCashId) {
@@ -1391,6 +1659,155 @@ async function deleteCashTransaction(cashId) {
     loadAllData({ silent: true });
   } catch (error) {
     showToast(`Не удалось удалить операцию: ${error.message || error}`, 'error');
+  }
+}
+
+async function saveLoan() {
+  if (!supabase) {
+    showToast('Сначала подключите Supabase в файле config.js.', 'error');
+    return;
+  }
+  if (!loanFields.lender_name.value.trim()) {
+    showToast('Укажите, у кого взят займ.', 'error');
+    return;
+  }
+  if (parseNumber(loanFields.principal_amount.value) <= 0) {
+    showToast('Укажите сумму займа больше нуля.', 'error');
+    return;
+  }
+
+  try {
+    const payload = {
+      workspace_key: state.workspaceKey,
+      lender_name: loanFields.lender_name.value.trim(),
+      loan_title: loanFields.loan_title.value.trim() || null,
+      issue_date: loanFields.issue_date.value || null,
+      due_date: loanFields.due_date.value || null,
+      principal_amount: parseNumber(loanFields.principal_amount.value),
+      received_account_type: loanFields.received_account_type.value || 'cashless',
+      description: loanFields.description.value.trim() || null,
+    };
+
+    let saved;
+    if (state.currentLoanId) {
+      const { data, error } = await supabase.from('loans').update(payload).eq('id', state.currentLoanId).eq('workspace_key', state.workspaceKey).select().single();
+      if (error) throw error;
+      saved = data;
+    } else {
+      const { data, error } = await supabase.from('loans').insert(payload).select().single();
+      if (error) throw error;
+      saved = data;
+    }
+
+    upsertStateItem('loans', saved);
+    closeModal('loan-modal');
+    renderAll();
+    showToast('Займ сохранён.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось сохранить займ: ${error.message || error}`, 'error');
+  }
+}
+
+async function deleteLoan(loanId) {
+  if (!supabase || !loanId) return;
+  const linkedRepayments = state.cashTransactions.filter((row) => row.related_loan_id === loanId && row.purpose === 'loan_repayment').length;
+  if (linkedRepayments > 0) {
+    showToast('Сначала удалите или измените операции погашения по этому займу.', 'error', 5000);
+    return;
+  }
+  const confirmed = window.confirm('Удалить займ?');
+  if (!confirmed) return;
+  try {
+    const { error } = await supabase.from('loans').delete().eq('id', loanId).eq('workspace_key', state.workspaceKey);
+    if (error) throw error;
+    state.loans = state.loans.filter((row) => row.id !== loanId);
+    renderAll();
+    showToast('Займ удалён.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось удалить займ: ${error.message || error}`, 'error');
+  }
+}
+
+async function savePersonalRecord() {
+  if (!supabase) {
+    showToast('Сначала подключите Supabase в файле config.js.', 'error');
+    return;
+  }
+  if (parseNumber(personalFields.amount.value) <= 0) {
+    showToast('Укажите сумму больше нуля.', 'error');
+    return;
+  }
+
+  const recordType = personalFields.record_type.value;
+  const accountType = personalFields.account_type.value || null;
+  if (['reimbursed_from_company', 'took_from_company', 'returned_to_company'].includes(recordType) && !accountType) {
+    showToast('Для этой записи выберите кассу: наличный или безналичный расчёт.', 'error');
+    return;
+  }
+
+  try {
+    const payload = {
+      workspace_key: state.workspaceKey,
+      record_date: personalFields.record_date.value || null,
+      person_name: personalFields.person_name.value,
+      record_type: recordType,
+      account_type: accountType,
+      amount: parseNumber(personalFields.amount.value),
+      description: personalFields.description.value.trim() || null,
+    };
+
+    let saved;
+    if (state.currentPersonalId) {
+      const { data, error } = await supabase.from('personal_records').update(payload).eq('id', state.currentPersonalId).eq('workspace_key', state.workspaceKey).select().single();
+      if (error) throw error;
+      saved = data;
+    } else {
+      const { data, error } = await supabase.from('personal_records').insert(payload).select().single();
+      if (error) throw error;
+      saved = data;
+    }
+
+    upsertStateItem('personalRecords', saved);
+    closeModal('personal-modal');
+    renderAll();
+    showToast('Личная запись сохранена.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось сохранить запись: ${error.message || error}`, 'error');
+  }
+}
+
+async function deletePersonalRecord(recordId) {
+  if (!supabase || !recordId) return;
+  const confirmed = window.confirm('Удалить эту запись?');
+  if (!confirmed) return;
+  try {
+    const { error } = await supabase.from('personal_records').delete().eq('id', recordId).eq('workspace_key', state.workspaceKey);
+    if (error) throw error;
+    state.personalRecords = state.personalRecords.filter((row) => row.id !== recordId);
+    renderAll();
+    showToast('Запись удалена.', 'success');
+    loadAllData({ silent: true });
+  } catch (error) {
+    showToast(`Не удалось удалить запись: ${error.message || error}`, 'error');
+  }
+}
+
+function syncCashPurposeUI() {
+  const isLoan = cashFields.purpose?.value === 'loan_repayment';
+  if (cashFields.related_loan_id) cashFields.related_loan_id.disabled = !isLoan;
+  if (cashFields.flow_type) cashFields.flow_type.disabled = isLoan;
+  if (isLoan) cashFields.flow_type.value = 'expense';
+}
+
+function syncPersonalTypeUI() {
+  const type = personalFields.record_type?.value;
+  const needsCash = ['reimbursed_from_company', 'took_from_company', 'returned_to_company'].includes(type);
+  if (personalFields.account_type) {
+    personalFields.account_type.disabled = !needsCash;
+    if (!needsCash) personalFields.account_type.value = '';
   }
 }
 
@@ -1447,6 +1864,44 @@ function handleBodyClick(event) {
     return;
   }
 
+  const editLoanId = target.closest('[data-edit-loan]')?.dataset.editLoan;
+  if (editLoanId) {
+    openLoanModal(editLoanId);
+    return;
+  }
+
+  const deleteLoanId = target.closest('[data-delete-loan]')?.dataset.deleteLoan;
+  if (deleteLoanId) {
+    deleteLoan(deleteLoanId);
+    return;
+  }
+
+  const repayLoanId = target.closest('[data-repay-loan]')?.dataset.repayLoan;
+  if (repayLoanId) {
+    const loan = state.loans.find((item) => item.id === repayLoanId);
+    openCashModal(null, {
+      flow_type: 'expense',
+      purpose: 'loan_repayment',
+      related_loan_id: repayLoanId,
+      account_type: loan?.received_account_type || 'cashless',
+      category: 'Погашение займа',
+      description: loan ? `Погашение займа: ${loan.lender_name}` : 'Погашение займа',
+    });
+    return;
+  }
+
+  const editPersonalId = target.closest('[data-edit-personal]')?.dataset.editPersonal;
+  if (editPersonalId) {
+    openPersonalModal(editPersonalId);
+    return;
+  }
+
+  const deletePersonalId = target.closest('[data-delete-personal]')?.dataset.deletePersonal;
+  if (deletePersonalId) {
+    deletePersonalRecord(deletePersonalId);
+    return;
+  }
+
   const calendarDate = target.closest('[data-calendar-date]')?.dataset.calendarDate;
   if (calendarDate) {
     renderCalendarDayEvents(calendarDate);
@@ -1485,17 +1940,73 @@ function getDraftSummary(draft) {
 }
 
 function getCashMetrics() {
-  const contractIncome = state.payments.reduce((sum, row) => sum + parseNumber(row.amount), 0);
-  const officeExpenses = state.expenses.reduce((sum, row) => sum + parseNumber(row.amount), 0);
-  const otherIncome = state.cashTransactions
-    .filter((row) => row.flow_type === 'income')
-    .reduce((sum, row) => sum + parseNumber(row.amount), 0);
-  const otherExpense = state.cashTransactions
-    .filter((row) => row.flow_type === 'expense')
-    .reduce((sum, row) => sum + parseNumber(row.amount), 0);
-  const otherNet = otherIncome - otherExpense;
-  const balance = contractIncome + otherIncome - officeExpenses - otherExpense;
-  return { contractIncome, officeExpenses, otherIncome, otherExpense, otherNet, balance };
+  const paymentRows = state.payments.map((row) => ({
+    amount: parseNumber(row.amount),
+    flowType: 'income',
+    accountType: row.payment_channel || 'cashless',
+    category: 'Договор',
+    source: 'payment',
+  }));
+
+  const expenseRows = state.expenses.map((row) => ({
+    amount: parseNumber(row.amount),
+    flowType: 'expense',
+    accountType: row.payment_channel || 'cashless',
+    category: row.category || 'Расход конторы',
+    source: 'expense',
+  }));
+
+  const cashRows = state.cashTransactions.map((row) => ({
+    amount: parseNumber(row.amount),
+    flowType: row.flow_type,
+    accountType: row.account_type || 'cashless',
+    category: row.category || 'Операция',
+    source: 'cash',
+  }));
+
+  const loanRows = state.loans.map((row) => ({
+    amount: parseNumber(row.principal_amount),
+    flowType: 'income',
+    accountType: row.received_account_type || 'cashless',
+    category: 'Займ',
+    source: 'loan',
+  }));
+
+  const personalCashRows = state.personalRecords
+    .map(buildPersonalCashMovement)
+    .filter(Boolean)
+    .map((row) => ({ ...row, source: 'personal' }));
+
+  const allRows = paymentRows.concat(expenseRows, cashRows, loanRows, personalCashRows);
+
+  const totals = allRows.reduce((acc, row) => {
+    const amount = parseNumber(row.amount);
+    const account = row.accountType === 'cash' ? 'cash' : 'cashless';
+    const signed = row.flowType === 'income' ? amount : -amount;
+    acc.balance += signed;
+    acc[`${account}Balance`] += signed;
+    if (row.source === 'payment') acc.contractIncome += amount;
+    if (row.source === 'expense') acc.officeExpenses += amount;
+    if (row.source === 'cash') {
+      if (row.flowType === 'income') acc.otherIncome += amount;
+      else acc.otherExpense += amount;
+    }
+    if (row.source === 'loan') acc.loanIncome += amount;
+    return acc;
+  }, {
+    balance: 0,
+    cashBalance: 0,
+    cashlessBalance: 0,
+    contractIncome: 0,
+    officeExpenses: 0,
+    otherIncome: 0,
+    otherExpense: 0,
+    loanIncome: 0,
+  });
+
+  const loans = getLoanMetrics();
+  const otherNet = totals.otherIncome - totals.otherExpense;
+  return { ...totals, otherNet, loanOutstanding: loans.outstandingTotal };
 }
 
 function getCashLedgerRows() {
@@ -1508,6 +2019,7 @@ function getCashLedgerRows() {
     sourceLabel: 'Оплата по договору',
     title: 'Поступление по договору',
     category: 'Договор',
+    accountType: row.payment_channel || 'cashless',
     clientId: row.client_id,
     clientName: getClientName(row.client_id),
     description: row.comment || 'Оплата клиента',
@@ -1522,7 +2034,8 @@ function getCashLedgerRows() {
     sourceType: 'expense',
     sourceLabel: 'Расход конторы',
     title: 'Расход по делу',
-    category: row.category || 'Расход',
+    category: row.category || 'Расход конторы',
+    accountType: row.payment_channel || 'cashless',
     clientId: row.client_id,
     clientName: getClientName(row.client_id),
     description: row.comment || 'Дополнительный расход',
@@ -1535,17 +2048,104 @@ function getCashLedgerRows() {
     flowType: row.flow_type,
     signedAmount: row.flow_type === 'income' ? parseNumber(row.amount) : -parseNumber(row.amount),
     sourceType: 'cash',
-    sourceLabel: 'Иная операция',
-    title: row.flow_type === 'income' ? 'Иной доход' : 'Иной расход',
-    category: row.category || 'Без категории',
+    sourceLabel: row.purpose === 'loan_repayment' ? 'Погашение займа' : 'Иная операция',
+    title: row.purpose === 'loan_repayment' ? `Погашение займа${row.related_loan_id ? `: ${getLoanName(row.related_loan_id)}` : ''}` : (row.flow_type === 'income' ? 'Иной доход' : 'Иной расход'),
+    category: row.category || 'Иное',
+    accountType: row.account_type || 'cashless',
     clientId: null,
     clientName: '',
     description: row.description || row.category || 'Операция по кассе',
     createdAt: row.created_at,
   }));
 
-  return paymentRows.concat(expenseRows, cashRows)
+  const loanRows = state.loans.map((row) => ({
+    id: row.id,
+    date: row.issue_date,
+    flowType: 'income',
+    signedAmount: parseNumber(row.principal_amount),
+    sourceType: 'loan',
+    sourceLabel: 'Получен займ',
+    title: `Займ от ${row.lender_name}`,
+    category: row.loan_title || 'Займ',
+    accountType: row.received_account_type || 'cashless',
+    clientId: null,
+    clientName: '',
+    description: row.description || row.loan_title || 'Получен займ',
+    createdAt: row.created_at,
+  }));
+
+  const personalRows = state.personalRecords
+    .map((row) => {
+      const movement = buildPersonalCashMovement(row);
+      if (!movement) return null;
+      return {
+        id: row.id,
+        date: row.record_date,
+        flowType: movement.flowType,
+        signedAmount: movement.flowType === 'income' ? movement.amount : -movement.amount,
+        sourceType: 'personal',
+        sourceLabel: 'Личные расчёты',
+        title: `${row.person_name}: ${personalRecordTypeLabel(row.record_type)}`,
+        category: 'Личные расчёты',
+        accountType: movement.accountType,
+        clientId: null,
+        clientName: '',
+        description: row.description || personalRecordTypeLabel(row.record_type),
+        createdAt: row.created_at,
+      };
+    })
+    .filter(Boolean);
+
+  return paymentRows.concat(expenseRows, cashRows, loanRows, personalRows)
     .sort((a, b) => `${b.date || ''} ${b.createdAt || ''}`.localeCompare(`${a.date || ''} ${a.createdAt || ''}`));
+}
+
+function getLoanMetrics() {
+  const items = state.loans.map((loan) => {
+    const repaid = state.cashTransactions
+      .filter((row) => row.related_loan_id === loan.id && row.purpose === 'loan_repayment')
+      .reduce((sum, row) => sum + parseNumber(row.amount), 0);
+    const outstanding = Math.max(parseNumber(loan.principal_amount) - repaid, 0);
+    return { ...loan, repaid, outstanding };
+  });
+  return {
+    items: items.sort((a, b) => `${a.due_date || ''} ${a.issue_date || ''}`.localeCompare(`${b.due_date || ''} ${b.issue_date || ''}`)),
+    principalTotal: items.reduce((sum, row) => sum + parseNumber(row.principal_amount), 0),
+    outstandingTotal: items.reduce((sum, row) => sum + row.outstanding, 0),
+    activeCount: items.filter((row) => row.outstanding > 0).length,
+  };
+}
+
+function getPersonalMetrics() {
+  const balances = { 'Ильвар': 0, 'Рустам': 0 };
+  state.personalRecords.forEach((row) => {
+    const { balanceDelta } = getPersonalRecordEffect(row);
+    balances[row.person_name] = (balances[row.person_name] || 0) + balanceDelta;
+  });
+  return {
+    balances,
+    netCompanyLiability: Object.values(balances).reduce((sum, value) => sum + value, 0),
+  };
+}
+
+function getPersonalRecordEffect(row) {
+  const amount = parseNumber(row.amount);
+  switch (row.record_type) {
+    case 'spent_personal':
+      return { balanceDelta: amount, cashMovement: null };
+    case 'reimbursed_from_company':
+      return { balanceDelta: -amount, cashMovement: { flowType: 'expense', amount, accountType: row.account_type || 'cashless' } };
+    case 'took_from_company':
+      return { balanceDelta: -amount, cashMovement: { flowType: 'expense', amount, accountType: row.account_type || 'cashless' } };
+    case 'returned_to_company':
+      return { balanceDelta: amount, cashMovement: { flowType: 'income', amount, accountType: row.account_type || 'cashless' } };
+    default:
+      return { balanceDelta: 0, cashMovement: null };
+  }
+}
+
+function buildPersonalCashMovement(row) {
+  return getPersonalRecordEffect(row).cashMovement;
 }
 
 function getClientName(clientId) {
@@ -1616,6 +2216,30 @@ function formatDateTime(value) {
 
 function formatEventDateTime(event) {
   return `${formatDate(event.event_date)}${event.event_time ? `, ${event.event_time}` : ''}`;
+}
+
+function accountTypeLabel(value) {
+  return {
+    cash: 'Наличный расчёт',
+    cashless: 'Безналичный расчёт',
+    '': 'Без движения',
+    null: 'Без движения',
+    undefined: 'Без движения',
+  }[value] || 'Без движения';
+}
+
+function personalRecordTypeLabel(value) {
+  return {
+    spent_personal: 'Личные деньги потрачены на компанию',
+    reimbursed_from_company: 'Компания погасила личный расход',
+    took_from_company: 'Взял деньги компании на личные нужды',
+    returned_to_company: 'Вернул деньги компании',
+  }[value] || value;
+}
+
+function getLoanName(loanId) {
+  const loan = state.loans.find((item) => item.id === loanId);
+  return loan ? `${loan.lender_name}` : 'Займ';
 }
 
 function parseNumber(value) {

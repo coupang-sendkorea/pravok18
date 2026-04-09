@@ -87,7 +87,7 @@
                 <p class="muted">Просрочки и ближайшие сроки.</p>
               </div>
             </div>
-            <div id="payment-alerts" class="list-stack"></div>
+            <div id="payment-alerts" class="list-stack limited-scroll"></div>
           </div>
 
           <div class="glass-card card-large">
@@ -97,7 +97,7 @@
                 <p class="muted">Что скоро наступит или уже идет.</p>
               </div>
             </div>
-            <div id="upcoming-events" class="list-stack"></div>
+            <div id="upcoming-events" class="list-stack limited-scroll"></div>
           </div>
 
           <div class="glass-card card-large">
@@ -107,7 +107,7 @@
                 <p class="muted">Поступления по договорам и иные доходы/расходы.</p>
               </div>
             </div>
-            <div id="recent-cash-ops" class="list-stack"></div>
+            <div id="recent-cash-ops" class="list-stack limited-scroll"></div>
           </div>
         </div>
 
@@ -154,11 +154,55 @@
             <div class="section-inline-head">
               <div>
                 <h4>Структура кассы</h4>
-                <p class="muted">Касса учитывает оплаты по договорам, расходы конторы и иные операции.</p>
+                <p class="muted">Наличный и безналичный баланс, займы и служебные операции.</p>
               </div>
             </div>
             <div id="cash-summary-grid" class="cash-summary-grid"></div>
           </div>
+        </div>
+
+        <div class="cash-detail-grid">
+          <div class="glass-card card-large compact-card">
+            <div class="section-inline-head">
+              <div>
+                <h4>Займы</h4>
+                <p class="muted">Что взяли и что осталось погасить.</p>
+              </div>
+              <button id="open-loan-btn" class="btn btn-secondary btn-sm" type="button">Новый займ</button>
+            </div>
+            <div id="loans-overview" class="list-stack slim-list"></div>
+          </div>
+
+          <div class="glass-card card-large compact-card">
+            <div class="section-inline-head">
+              <div>
+                <h4>Личные расходы и расчёты</h4>
+                <p class="muted">Учёт Ильвара и Рустама для внутренних расчётов.</p>
+              </div>
+              <button id="open-personal-btn" class="btn btn-secondary btn-sm" type="button">Новая запись</button>
+            </div>
+            <div id="personal-summary" class="list-stack slim-list"></div>
+          </div>
+        </div>
+
+        <div class="glass-card card-large">
+          <div class="section-inline-head">
+            <div>
+              <h3>Реестр займов</h3>
+              <p class="muted">Полученные займы, сроки и остаток к погашению.</p>
+            </div>
+          </div>
+          <div id="loans-table" class="table-wrapper"></div>
+        </div>
+
+        <div class="glass-card card-large">
+          <div class="section-inline-head">
+            <div>
+              <h3>Личные расходы и погашения</h3>
+              <p class="muted">Сколько компания должна партнёрам или сколько партнёры должны компании.</p>
+            </div>
+          </div>
+          <div id="personal-table" class="table-wrapper"></div>
         </div>
 
         <div class="glass-card card-large">
@@ -392,8 +436,28 @@
             </select>
           </div>
           <div>
+            <label for="cash-account-type">Касса</label>
+            <select id="cash-account-type">
+              <option value="cashless">Безналичный расчёт</option>
+              <option value="cash">Наличный расчёт</option>
+            </select>
+          </div>
+          <div>
+            <label for="cash-purpose">Назначение</label>
+            <select id="cash-purpose">
+              <option value="other">Иной доход / расход</option>
+              <option value="loan_repayment">Погашение займа</option>
+            </select>
+          </div>
+          <div>
             <label for="cash-category">Категория</label>
-            <input id="cash-category" type="text" placeholder="Например: аренда, иное поступление" />
+            <input id="cash-category" type="text" placeholder="Например: аренда, коммунальные услуги" />
+          </div>
+          <div>
+            <label for="cash-loan-id">Связанный займ</label>
+            <select id="cash-loan-id">
+              <option value="">Без привязки</option>
+            </select>
           </div>
           <div>
             <label for="cash-amount">Сумма</label>
@@ -410,6 +474,120 @@
         <div class="modal-foot-right">
           <button class="btn btn-secondary" type="button" data-close-modal="cash-modal">Отмена</button>
           <button id="save-cash-btn" class="btn btn-primary" type="button">Сохранить</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="loan-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Займы</div>
+          <h3 id="loan-modal-title">Новый займ</h3>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="loan-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid cols-2">
+          <div>
+            <label for="loan-lender-name">От кого взяли займ</label>
+            <input id="loan-lender-name" type="text" placeholder="ФИО / организация" required />
+          </div>
+          <div>
+            <label for="loan-title">Название / пометка</label>
+            <input id="loan-title" type="text" placeholder="Например: временный займ на госпошлины" />
+          </div>
+          <div>
+            <label for="loan-issue-date">Дата получения</label>
+            <input id="loan-issue-date" type="date" required />
+          </div>
+          <div>
+            <label for="loan-due-date">Срок возврата</label>
+            <input id="loan-due-date" type="date" />
+          </div>
+          <div>
+            <label for="loan-amount">Сумма займа</label>
+            <input id="loan-amount" type="number" min="0" step="0.01" required />
+          </div>
+          <div>
+            <label for="loan-account-type">Куда поступил займ</label>
+            <select id="loan-account-type">
+              <option value="cashless">Безналичный расчёт</option>
+              <option value="cash">Наличный расчёт</option>
+            </select>
+          </div>
+          <div class="full-width">
+            <label for="loan-description">Описание</label>
+            <textarea id="loan-description" rows="4" placeholder="Комментарий по займу"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div></div>
+        <div class="modal-foot-right">
+          <button class="btn btn-secondary" type="button" data-close-modal="loan-modal">Отмена</button>
+          <button id="save-loan-btn" class="btn btn-primary" type="button">Сохранить</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="personal-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Личные расчёты</div>
+          <h3 id="personal-modal-title">Новая запись</h3>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="personal-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid cols-2">
+          <div>
+            <label for="personal-date">Дата</label>
+            <input id="personal-date" type="date" required />
+          </div>
+          <div>
+            <label for="personal-person">Сотрудник</label>
+            <select id="personal-person">
+              <option value="Ильвар">Ильвар</option>
+              <option value="Рустам">Рустам</option>
+            </select>
+          </div>
+          <div>
+            <label for="personal-type">Тип записи</label>
+            <select id="personal-type">
+              <option value="spent_personal">Потратил личные деньги на нужды компании</option>
+              <option value="reimbursed_from_company">Компания погасила личный расход</option>
+              <option value="took_from_company">Взял деньги компании на личные нужды</option>
+              <option value="returned_to_company">Вернул деньги компании</option>
+            </select>
+          </div>
+          <div>
+            <label for="personal-account-type">Касса для движения денег</label>
+            <select id="personal-account-type">
+              <option value="">Без движения по кассе</option>
+              <option value="cashless">Безналичный расчёт</option>
+              <option value="cash">Наличный расчёт</option>
+            </select>
+          </div>
+          <div>
+            <label for="personal-amount">Сумма</label>
+            <input id="personal-amount" type="number" min="0" step="0.01" required />
+          </div>
+          <div class="full-width">
+            <label for="personal-description">Описание</label>
+            <textarea id="personal-description" rows="4" placeholder="Например: аренда оплачена Ильваром"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div></div>
+        <div class="modal-foot-right">
+          <button class="btn btn-secondary" type="button" data-close-modal="personal-modal">Отмена</button>
+          <button id="save-personal-btn" class="btn btn-primary" type="button">Сохранить</button>
         </div>
       </div>
     </form>
