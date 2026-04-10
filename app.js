@@ -24,10 +24,12 @@ function createRestSupabaseClient(url, apiKey) {
       this.payload = null;
       this.expectSingle = false;
       this.returnRepresentation = false;
+      this.selectOptions = {};
     }
 
-    select(columns = '*') {
+    select(columns = '*', options = {}) {
       this.columns = columns;
+      this.selectOptions = options || {};
       this.returnRepresentation = true;
       if (this.action === 'select') this.action = 'select';
       return this;
@@ -57,6 +59,11 @@ function createRestSupabaseClient(url, apiKey) {
 
     in(column, values) {
       this.filters.push({ column, op: 'in', value: values });
+      return this;
+    }
+
+    is(column, value) {
+      this.filters.push({ column, op: 'is', value });
       return this;
     }
 
@@ -102,6 +109,10 @@ function createRestSupabaseClient(url, apiKey) {
             : '';
           params.append(filter.column, `in.(${list})`);
         }
+        if (filter.op === 'is') {
+          const normalized = filter.value === null ? 'null' : normalizeValue(filter.value);
+          params.append(filter.column, `is.${normalized}`);
+        }
       }
 
       if (this.orders.length) {
@@ -110,6 +121,14 @@ function createRestSupabaseClient(url, apiKey) {
 
       if (this.expectSingle) {
         headers['Accept'] = 'application/vnd.pgrst.object+json';
+      }
+
+      if (this.action === 'select' && this.selectOptions?.count) {
+        headers['Prefer'] = `count=${this.selectOptions.count}`;
+      }
+
+      if (this.action === 'select' && this.selectOptions?.head) {
+        method = 'HEAD';
       }
 
       if (this.action === 'insert') {
@@ -131,7 +150,7 @@ function createRestSupabaseClient(url, apiKey) {
 
       try {
         const response = await fetch(endpoint, { method, headers, body });
-        const raw = await response.text();
+        const raw = method === 'HEAD' ? '' : await response.text();
         let parsed = null;
         if (raw) {
           try {
@@ -146,7 +165,10 @@ function createRestSupabaseClient(url, apiKey) {
           return { data: null, error: { message, details: parsed } };
         }
 
-        return { data: parsed, error: null };
+        const countHeader = response.headers.get('content-range');
+        const count = countHeader && countHeader.includes('/') ? Number(countHeader.split('/').pop()) : null;
+
+        return { data: parsed, error: null, count };
       } catch (error) {
         return { data: null, error: { message: error.message || 'Сетевая ошибка', details: error } };
       }
@@ -509,7 +531,8 @@ async function migrateLegacyWorkspaceIfNeeded() {
     .eq('workspace_key', state.workspaceKey);
 
   if (currentError) throw currentError;
-  if ((currentCount || 0) > 0) return;
+  const existingCount = Number.isFinite(currentCount) ? currentCount : 0;
+  if (existingCount > 0) return;
 
   const { count: legacyCount, error: legacyError } = await supabase
     .from('clients')
@@ -517,7 +540,8 @@ async function migrateLegacyWorkspaceIfNeeded() {
     .is('workspace_key', null);
 
   if (legacyError) throw legacyError;
-  if ((legacyCount || 0) === 0) return;
+  const oldCount = Number.isFinite(legacyCount) ? legacyCount : 0;
+  if (oldCount === 0) return;
 
   const confirmed = window.confirm('Найдены старые данные без привязки к паролю. Привязать их к текущему паролю, чтобы они открывались на всех устройствах?');
   if (!confirmed) return;

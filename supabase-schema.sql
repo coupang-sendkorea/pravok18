@@ -243,29 +243,29 @@ update public.clients
 set workspace_key = '4959c5dc4bb8f7c6bd4f7d6d2992e4b82257f2c738ff3aa7023dce0558f6f04e'
 where coalesce(workspace_key, '') = '';
 
-update public.payments as p
-set workspace_key = coalesce(p.workspace_key, c.workspace_key)
-from public.clients as c
-where p.client_id = c.id
-  and coalesce(p.workspace_key, '') = '';
+update public.payments
+set workspace_key = coalesce(workspace_key, c.workspace_key)
+from public.clients c
+where public.payments.client_id = c.id
+  and coalesce(public.payments.workspace_key, '') = '';
 
-update public.expenses as e
-set workspace_key = coalesce(e.workspace_key, c.workspace_key)
-from public.clients as c
-where e.client_id = c.id
-  and coalesce(e.workspace_key, '') = '';
+update public.expenses
+set workspace_key = coalesce(workspace_key, c.workspace_key)
+from public.clients c
+where public.expenses.client_id = c.id
+  and coalesce(public.expenses.workspace_key, '') = '';
 
-update public.payment_schedules as ps
-set workspace_key = coalesce(ps.workspace_key, c.workspace_key)
-from public.clients as c
-where ps.client_id = c.id
-  and coalesce(ps.workspace_key, '') = '';
+update public.payment_schedules
+set workspace_key = coalesce(workspace_key, c.workspace_key)
+from public.clients c
+where public.payment_schedules.client_id = c.id
+  and coalesce(public.payment_schedules.workspace_key, '') = '';
 
-update public.events as ev
-set workspace_key = coalesce(ev.workspace_key, c.workspace_key, '4959c5dc4bb8f7c6bd4f7d6d2992e4b82257f2c738ff3aa7023dce0558f6f04e')
-from public.clients as c
-where ev.client_id = c.id
-  and coalesce(ev.workspace_key, '') = '';
+update public.events
+set workspace_key = coalesce(workspace_key, c.workspace_key, '4959c5dc4bb8f7c6bd4f7d6d2992e4b82257f2c738ff3aa7023dce0558f6f04e')
+from public.clients c
+where public.events.client_id = c.id
+  and coalesce(public.events.workspace_key, '') = '';
 
 update public.events
 set workspace_key = '4959c5dc4bb8f7c6bd4f7d6d2992e4b82257f2c738ff3aa7023dce0558f6f04e'
