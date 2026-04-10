@@ -200,8 +200,9 @@ function init() {
 function bindGlobalEvents() {
   els.passwordForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const expectedPassword = CONFIG.APP_PASSWORD || 'pravo888';
-    if (els.passwordInput.value === expectedPassword) {
+    const expectedPassword = (CONFIG.APP_PASSWORD || 'pravo888').trim();
+    const enteredPassword = String(els.passwordInput.value || '').trim();
+    if (enteredPassword === expectedPassword) {
       state.workspaceKey = await buildWorkspaceKey(els.passwordInput.value);
       sessionStorage.setItem('law-crm-unlocked', 'yes');
       sessionStorage.setItem('law-crm-workspace-key', state.workspaceKey);
