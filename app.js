@@ -36,7 +36,6 @@ const state = {
   workspaceKey: null,
 };
 
-let docxLibPromise = null;
 
 const els = {
   passwordGate: $('#password-gate'),
@@ -94,6 +93,9 @@ const els = {
   nextMonthBtn: $('#next-month-btn'),
   saveClientBtn: $('#save-client-btn'),
   generateContractBtn: $('#generate-contract-btn'),
+  generateActBtn: $('#generate-act-btn'),
+  generateReceiptBtn: $('#generate-receipt-btn'),
+  generatePoaBtn: $('#generate-poa-btn'),
   archiveClientBtn: $('#archive-client-btn'),
   restoreClientBtn: $('#restore-client-btn'),
   saveEventBtn: $('#save-event-btn'),
@@ -120,6 +122,18 @@ const clientFields = {
   passport_issued_by: $('#client-passport-issued-by'),
   passport_division_code: $('#client-passport-division-code'),
   service_description: $('#client-service-description'),
+  act_date: $('#client-act-date'),
+  act_city: $('#client-act-city'),
+  receipt_date: $('#client-receipt-date'),
+  receipt_city: $('#client-receipt-city'),
+  attorney_full_name: $('#client-attorney-full-name'),
+  attorney_position: $('#client-attorney-position'),
+  attorney_passport: $('#client-attorney-passport'),
+  attorney_address: $('#client-attorney-address'),
+  attorney_phone: $('#client-attorney-phone'),
+  power_of_attorney_date: $('#client-power-date'),
+  power_of_attorney_city: $('#client-power-city'),
+  power_of_attorney_powers: $('#client-power-powers'),
   contract_amount: $('#client-contract-amount'),
   payment_type: $('#client-payment-type'),
   payment_deadline: $('#client-payment-deadline'),
@@ -233,6 +247,9 @@ function bindGlobalEvents() {
   $('#add-schedule-btn').addEventListener('click', () => addDraftRow('schedules'));
   els.saveClientBtn.addEventListener('click', saveClient);
   els.generateContractBtn?.addEventListener('click', generateContractForDraft);
+  els.generateActBtn?.addEventListener('click', generateActForDraft);
+  els.generateReceiptBtn?.addEventListener('click', generateReceiptForDraft);
+  els.generatePoaBtn?.addEventListener('click', generatePowerOfAttorneyForDraft);
   els.archiveClientBtn.addEventListener('click', archiveCurrentClient);
   els.restoreClientBtn.addEventListener('click', restoreCurrentClient);
   els.saveEventBtn.addEventListener('click', saveEvent);
@@ -1082,6 +1099,18 @@ function openClientModal(clientId = null) {
     passport_issued_by: client?.passport_issued_by || '',
     passport_division_code: client?.passport_division_code || '',
     service_description: client?.service_description || client?.case_title || '',
+    act_date: client?.act_date || toDateInputValue(new Date()),
+    act_city: client?.act_city || client?.contract_city || 'Удмуртская Республика, г. Ижевск',
+    receipt_date: client?.receipt_date || toDateInputValue(new Date()),
+    receipt_city: client?.receipt_city || client?.contract_city || 'Удмуртская Республика, г. Ижевск',
+    attorney_full_name: client?.attorney_full_name || '',
+    attorney_position: client?.attorney_position || 'представитель ООО «Контакт+»',
+    attorney_passport: client?.attorney_passport || '',
+    attorney_address: client?.attorney_address || '',
+    attorney_phone: client?.attorney_phone || '',
+    power_of_attorney_date: client?.power_of_attorney_date || toDateInputValue(new Date()),
+    power_of_attorney_city: client?.power_of_attorney_city || client?.contract_city || 'Удмуртская Республика, г. Ижевск',
+    power_of_attorney_powers: client?.power_of_attorney_powers || '',
     contract_amount: parseNumber(client?.contract_amount),
     payment_type: client?.payment_type || '100% предоплата',
     payment_deadline: client?.payment_deadline || '',
@@ -1353,6 +1382,18 @@ async function saveClient() {
       passport_issued_by: draft.passport_issued_by || null,
       passport_division_code: draft.passport_division_code || null,
       service_description: draft.service_description || null,
+      act_date: draft.act_date || null,
+      act_city: draft.act_city || null,
+      receipt_date: draft.receipt_date || null,
+      receipt_city: draft.receipt_city || null,
+      attorney_full_name: draft.attorney_full_name || null,
+      attorney_position: draft.attorney_position || null,
+      attorney_passport: draft.attorney_passport || null,
+      attorney_address: draft.attorney_address || null,
+      attorney_phone: draft.attorney_phone || null,
+      power_of_attorney_date: draft.power_of_attorney_date || null,
+      power_of_attorney_city: draft.power_of_attorney_city || null,
+      power_of_attorney_powers: draft.power_of_attorney_powers || null,
       contract_amount: parseNumber(draft.contract_amount),
       payment_type: draft.payment_type || null,
       payment_deadline: draft.payment_deadline || null,
@@ -2385,22 +2426,73 @@ async function generateContractForDraft() {
   }
 
   try {
-    const docx = await getDocxLib();
-    const document = buildContractDocument(docx, draft);
-    const blob = await docx.Packer.toBlob(document);
-    downloadBlob(blob, createContractFilename(draft));
-    showToast('Договор сформирован и скачан в формате Word.', 'success', 4500);
+    const html = buildContractWordHtml(draft);
+    downloadWordDocument(html, createContractFilename(draft));
+    showToast('Договор сформирован и скачан в Word.', 'success', 4500);
   } catch (error) {
     console.error(error);
     showToast(`Не удалось сформировать договор: ${error.message || error}`, 'error', 7000);
   }
 }
 
-async function getDocxLib() {
-  if (!docxLibPromise) {
-    docxLibPromise = import('https://cdn.jsdelivr.net/npm/docx@8.5.0/+esm');
+function generateActForDraft() {
+  const draft = state.clientDraft;
+  if (!draft) return;
+
+  const missing = getActMissingFields(draft);
+  if (missing.length) {
+    showToast(`Для акта заполните: ${missing.join(', ')}.`, 'error', 6500);
+    return;
   }
-  return docxLibPromise;
+
+  try {
+    const html = buildActWordHtml(draft);
+    downloadWordDocument(html, createActFilename(draft));
+    showToast('Акт сформирован и скачан в Word.', 'success', 4500);
+  } catch (error) {
+    console.error(error);
+    showToast(`Не удалось сформировать акт: ${error.message || error}`, 'error', 7000);
+  }
+}
+
+function generateReceiptForDraft() {
+  const draft = state.clientDraft;
+  if (!draft) return;
+
+  const missing = getReceiptMissingFields(draft);
+  if (missing.length) {
+    showToast(`Для расписки заполните: ${missing.join(', ')}.`, 'error', 6500);
+    return;
+  }
+
+  try {
+    const html = buildReceiptWordHtml(draft);
+    downloadWordDocument(html, createReceiptFilename(draft));
+    showToast('Расписка сформирована и скачана в Word.', 'success', 4500);
+  } catch (error) {
+    console.error(error);
+    showToast(`Не удалось сформировать расписку: ${error.message || error}`, 'error', 7000);
+  }
+}
+
+function generatePowerOfAttorneyForDraft() {
+  const draft = state.clientDraft;
+  if (!draft) return;
+
+  const missing = getPowerOfAttorneyMissingFields(draft);
+  if (missing.length) {
+    showToast(`Для доверенности заполните: ${missing.join(', ')}.`, 'error', 7000);
+    return;
+  }
+
+  try {
+    const html = buildPowerOfAttorneyWordHtml(draft);
+    downloadWordDocument(html, createPowerOfAttorneyFilename(draft));
+    showToast('Доверенность сформирована и скачана в Word.', 'success', 4500);
+  } catch (error) {
+    console.error(error);
+    showToast(`Не удалось сформировать доверенность: ${error.message || error}`, 'error', 7000);
+  }
 }
 
 function getContractMissingFields(draft) {
@@ -2421,6 +2513,44 @@ function getContractMissingFields(draft) {
   return checks.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
 }
 
+function getActMissingFields(draft) {
+  const checks = [
+    ['ФИО клиента', draft.full_name],
+    ['номер договора', draft.contract_number],
+    ['дату договора', draft.contract_date],
+    ['дату акта', draft.act_date],
+    ['услугу / дело', draft.service_description || draft.case_title],
+    ['сумму договора', parseNumber(draft.contract_amount) > 0 ? 'ok' : ''],
+  ];
+  return checks.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+}
+
+function getReceiptMissingFields(draft) {
+  const checks = [
+    ['ФИО клиента', draft.full_name],
+    ['номер договора', draft.contract_number],
+    ['дату договора', draft.contract_date],
+    ['дату расписки', draft.receipt_date],
+    ['сумму для расписки', parseNumber(getReceiptAmount(draft)) > 0 ? 'ok' : ''],
+  ];
+  return checks.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+}
+
+function getPowerOfAttorneyMissingFields(draft) {
+  const checks = [
+    ['ФИО доверителя', draft.full_name],
+    ['дату рождения доверителя', draft.customer_birth_date],
+    ['адрес регистрации доверителя', draft.registration_address],
+    ['паспорт доверителя', draft.passport_number],
+    ['кем выдан паспорт доверителя', draft.passport_issued_by],
+    ['код подразделения доверителя', draft.passport_division_code],
+    ['ФИО представителя', draft.attorney_full_name],
+    ['дату доверенности', draft.power_of_attorney_date],
+    ['полномочия по доверенности', draft.power_of_attorney_powers],
+  ];
+  return checks.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+}
+
 function getContractPaymentDays(draft) {
   const explicit = Math.round(parseNumber(draft.contract_payment_days));
   if (explicit > 0) return explicit;
@@ -2435,207 +2565,222 @@ function getContractPaymentDays(draft) {
   return 0;
 }
 
-function buildContractDocument(docx, draft) {
-  const {
-    AlignmentType, BorderStyle, Document, HeadingLevel, Paragraph, Table, TableCell, TableRow, TextRun, WidthType,
-  } = docx;
+function getReceiptAmount(draft) {
+  if (!draft) return 0;
+  const latestPayment = [...(draft.payments || [])]
+    .filter((item) => parseNumber(item.amount) > 0)
+    .sort((a, b) => String(b.payment_date || '').localeCompare(String(a.payment_date || '')))[0];
+  return latestPayment ? parseNumber(latestPayment.amount) : parseNumber(draft.contract_amount);
+}
 
-  const invisible = { style: BorderStyle.NONE, color: 'FFFFFF', size: 0 };
-  const contractDate = parseDateSafe(draft.contract_date);
-  const contractDay = contractDate ? String(contractDate.getDate()).padStart(2, '0') : '____';
-  const contractMonth = contractDate ? monthNameRu(contractDate) : '___________';
-  const contractYear = contractDate ? String(contractDate.getFullYear()) : '2026';
+function buildContractWordHtml(draft) {
+  const contractDate = formatDateFancy(draft.contract_date);
   const amount = parseNumber(draft.contract_amount);
-  const amountDigits = formatNumberPlain(amount);
-  const amountWords = rublesToWords(amount);
   const paymentDays = getContractPaymentDays(draft);
-  const paymentDaysWords = numberToWordsRu(paymentDays);
-  const serviceDescription = draft.service_description || draft.case_title || '____________________________________________';
-  const paymentMode = paymentTypeContractLabel(draft.payment_type);
-  const registrationAddress = draft.registration_address || draft.address || '______________________________________';
+  const serviceDescription = escapeHtml(draft.service_description || draft.case_title || '____________________________');
+  const paymentMode = escapeHtml(paymentTypeContractLabel(draft.payment_type));
+  const city = escapeHtml(draft.contract_city || 'Удмуртская Республика, г. Ижевск');
+  const registrationAddress = escapeHtml(draft.registration_address || draft.address || '____________________________');
+  const phone = escapeHtml(draft.phone || '____________________________');
+  const birthDate = escapeHtml(formatDateLongDots(draft.customer_birth_date));
+  const amountDigits = escapeHtml(formatNumberPlain(amount));
+  const amountWords = escapeHtml(rublesToWords(amount));
+  const paymentDaysWords = escapeHtml(numberToWordsRu(paymentDays));
 
-  const p = (text, options = {}) => new Paragraph({
-    alignment: options.alignment || AlignmentType.JUSTIFIED,
-    spacing: { after: options.after ?? 120, before: options.before ?? 0, line: 300 },
-    indent: options.indent === false ? undefined : { firstLine: 420 },
-    children: (options.children || [new TextRun({ text: String(text || ''), bold: !!options.bold, italics: !!options.italics })]),
-  });
+  return buildWordHtmlDocument(`Договор № ${escapeHtml(draft.contract_number || '____')}`, `
+    <div class="title">ДОГОВОР № ${escapeHtml(draft.contract_number || '____')}</div>
+    <div class="subtitle">об оказании юридических услуг</div>
+    <table class="meta-table"><tr><td>${city}</td><td class="right">${contractDate}</td></tr></table>
+    <p><b>${escapeHtml(draft.full_name)}</b>, именуемый в дальнейшем «Заказчик, Доверитель», с одной стороны, и <b>Общество с ограниченной ответственностью «Контакт+»</b>, именуемое в дальнейшем «Исполнитель», в лице директора Шайхуловой Карины Дмитриевны, действующего на основании Устава, с другой стороны, именуемые в дальнейшем «Стороны», заключили настоящий Договор о нижеследующем:</p>
 
-  const titleP = (text) => new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { after: 120, line: 300 },
-    children: [new TextRun({ text, bold: true })],
-  });
+    <p class="section-title">1. Предмет договора</p>
+    <p>1.1. Заказчик поручает, а Исполнитель принимает на себя обязательство по оказанию следующих юридических услуг по составлению искового заявления / досудебной претензии ${serviceDescription}.</p>
+    <p>1.2. В предмет настоящего соглашения включены следующие виды и формы оказания юридической помощи:</p>
+    <ul>
+      <li>консультация Заказчика;</li>
+      <li>изучение и анализ документов, материалов по делу, подбор и анализ нормативно-правовых актов, судебной практики и специальных материалов;</li>
+      <li>подготовка иска / претензии, процессуальных документов и их подача;</li>
+      <li>представление интересов Заказчика в суде первой инстанции при рассмотрении дела по существу.</li>
+    </ul>
 
-  const sectionP = (text) => new Paragraph({
-    heading: HeadingLevel.HEADING_2,
-    alignment: AlignmentType.LEFT,
-    spacing: { before: 180, after: 100, line: 300 },
-    children: [new TextRun({ text, bold: true })],
-  });
+    <p class="section-title">2. Права и обязанности Сторон</p>
+    <p>2.1. Заказчик вправе получать консультации, информацию о ходе работы и знакомиться с подготовленными документами.</p>
+    <p>2.2. Заказчик обязан своевременно предоставить все документы и оплатить юридические услуги в порядке, предусмотренном настоящим Договором.</p>
+    <p>2.3. Исполнитель вправе запрашивать у Заказчика всю необходимую информацию и документы по делу.</p>
+    <p>2.4. Исполнитель обязан добросовестно и разумно представлять интересы Заказчика и сообщать информацию о ходе работы.</p>
 
-  const sideTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
-            children: [p(draft.contract_city || 'Удмуртская Республика, г. Ижевск', { indent: false, after: 0 })],
-          }),
-          new TableCell({
-            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              spacing: { after: 0, line: 300 },
-              children: [new TextRun({ text: `«${contractDay}» ${contractMonth} ${contractYear} г.` })],
-            })],
-          }),
-        ],
-      })],
-  });
+    <p class="section-title">3. Стоимость работ и порядок расчетов</p>
+    <p>3.1. Стоимость услуг по договору определяется в сумме <b>${amountDigits}</b> (<b>${amountWords}</b>) рублей.</p>
+    <p>3.2. Оплата производится следующим образом:</p>
+    <ul>
+      <li>${paymentMode};</li>
+      <li>в течение ${paymentDays} (${paymentDaysWords}) дней с момента подписания настоящего договора.</li>
+    </ul>
+    <p>3.3. Указанная сумма является платой за юридическую помощь и не зависит от итогового результата по делу.</p>
+    <p>3.4. Судебные издержки, госпошлина, экспертиза и иные обязательные платежи оплачиваются Заказчиком отдельно.</p>
 
-  const signaturesTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
-            children: [
-              p('Исполнитель:', { indent: false, bold: true }),
-              p('ООО «Контакт+»', { indent: false }),
-              p('Юридический и почтовый адрес: 426009, УР, г. Ижевск, ул. Совхозная, д.56', { indent: false }),
-              p('ИНН 1832028955, КПП 184001001', { indent: false }),
-              p('ОГРН 10218014338922, дата присвоения 11.11.02 г.', { indent: false }),
-              p('р/с 40702810729020000314', { indent: false }),
-              p('в филиале «Нижегородский» ОАО «АЛЬФА-БАНК»', { indent: false }),
-              p('к/с 30101810200000000824, БИК 042202824', { indent: false }),
-              p('Директор', { indent: false }),
-              p('_____________________/Шайхулова К.Д./', { indent: false, after: 60 }),
-              p('М.п.', { indent: false, after: 0 }),
-            ],
-          }),
-          new TableCell({
-            borders: { top: invisible, bottom: invisible, left: invisible, right: invisible },
-            children: [
-              p('Заказчик:', { indent: false, bold: true }),
-              p(draft.full_name || '______________________________________', { indent: false }),
-              p(`Дата рождения ${formatDateLongDots(draft.customer_birth_date)}`, { indent: false }),
-              p(`Адрес регистрации: ${registrationAddress}`, { indent: false }),
-              p(`Паспорт ${draft.passport_number || '_______________________________'}`, { indent: false }),
-              p(`Выдан ${draft.passport_issued_by || '_________________________________'}`, { indent: false }),
-              p(`Код подразделения ${draft.passport_division_code || '______________________'}`, { indent: false }),
-              p(`Тел. ${draft.phone || '_______________________________'}`, { indent: false }),
-              p('', { indent: false, after: 120 }),
-              p(`_____________________/ ${draft.full_name || '________________'}/`, { indent: false, after: 0 }),
-            ],
-          }),
-        ],
-      })],
-  });
+    <p class="section-title">4. Прочие условия</p>
+    <p>4.1. Договор вступает в силу с момента подписания и действует в течение одного года, а в части неисполненных обязательств — до полного исполнения.</p>
+    <p>4.2. Все споры и разногласия разрешаются путем переговоров, а при невозможности урегулирования — в судебном порядке.</p>
+    <p>4.3. Договор составлен в двух экземплярах, имеющих одинаковую юридическую силу.</p>
 
-  return new Document({
-    creator: 'OpenAI',
-    title: `Договор №${draft.contract_number || ''}`,
-    description: 'Договор оказания юридических услуг',
-    styles: {
-      default: {
-        document: {
-          run: { font: 'Times New Roman', size: 24 },
-          paragraph: { spacing: { line: 300 } },
-        },
-      },
-    },
-    sections: [{
-      properties: {
-        page: {
-          margin: { top: 1000, right: 1000, bottom: 1000, left: 1200 },
-        },
-      },
-      children: [
-        titleP(`ДОГОВОР №${draft.contract_number || '____'}`),
-        titleP('об оказании юридических услуг'),
-        p('', { indent: false, after: 40 }),
-        sideTable,
-        p('', { indent: false, after: 60 }),
-        p(`${draft.full_name}, именуемый в дальнейшем «Заказчик, Доверитель», с одной стороны, и Общество с ограниченной ответственностью «Контакт+», именуемое в дальнейшем «Исполнитель», в лице директора Шайхуловой Карины Дмитриевны, действующего на основании Устава, с другой стороны, именуемые в дальнейшем «Стороны», заключили настоящий Договор о нижеследующем:`),
+    <p class="section-title">5. Адреса, реквизиты и подписи сторон</p>
+    <table class="sign-table">
+      <tr>
+        <td>
+          <b>Исполнитель:</b><br>
+          ООО «Контакт+»<br>
+          426009, УР, г. Ижевск, ул. Совхозная, д. 56<br>
+          ИНН 1832028955, КПП 184001001<br>
+          ОГРН 10218014338922<br>
+          р/с 40702810729020000314<br>
+          в филиале «Нижегородский» ОАО «АЛЬФА-БАНК»<br>
+          к/с 30101810200000000824, БИК 042202824<br><br>
+          Директор<br><br><br>
+          _____________________ /Шайхулова К.Д./
+        </td>
+        <td>
+          <b>Заказчик:</b><br>
+          ${escapeHtml(draft.full_name)}<br>
+          Дата рождения: ${birthDate}<br>
+          Адрес регистрации: ${registrationAddress}<br>
+          Паспорт: ${escapeHtml(draft.passport_number || '____________________________')}<br>
+          Выдан: ${escapeHtml(draft.passport_issued_by || '____________________________')}<br>
+          Код подразделения: ${escapeHtml(draft.passport_division_code || '____________________________')}<br>
+          Телефон: ${phone}<br><br><br>
+          _____________________ /${escapeHtml(draft.full_name)} /
+        </td>
+      </tr>
+    </table>
+  `);
+}
 
-        sectionP('1. Предмет договора'),
-        p(`1.1. Заказчик поручает, а Исполнитель принимает на себя обязательство по оказанию следующих юридических услуг по составлению искового заявления/досудебной претензии ${serviceDescription}.`),
-        p('1.2. В предмет настоящего соглашения включены следующие виды и формы оказания юридической помощи:'),
-        p('- консультация Заказчика;'),
-        p('- изучение и анализ документов, материалов по делу, подбор, изучение и анализ нормативно-правовых актов, судебной практики, методических рекомендаций, специальной литературы в целях защиты прав и законных интересов Заказчика;'),
-        p('- подготовка иска/претензии и его подача в суд, подготовка и подача необходимых возражений, письменных пояснений, ходатайств и иных процессуальных документов, надобность в которых возникнет в ходе судопроизводства по делу;'),
-        p('- представление интересов Заказчика в суде первой инстанции при рассмотрении и разрешении дела по существу.'),
+function buildActWordHtml(draft) {
+  const actDate = formatDateFancy(draft.act_date || draft.contract_date);
+  const city = escapeHtml(draft.act_city || draft.contract_city || 'Удмуртская Республика, г. Ижевск');
+  const amount = parseNumber(draft.contract_amount);
+  const serviceDescription = escapeHtml(draft.service_description || draft.case_title || 'юридические услуги');
+  return buildWordHtmlDocument(`Акт_${escapeHtml(draft.contract_number || 'без_номера')}`, `
+    <div class="title">АКТ</div>
+    <div class="subtitle">об оказании юридических услуг</div>
+    <table class="meta-table"><tr><td>${city}</td><td class="right">${actDate}</td></tr></table>
+    <p>Мы, нижеподписавшиеся, ООО «Контакт+» в лице директора Шайхуловой Карины Дмитриевны, именуемое в дальнейшем «Исполнитель», и <b>${escapeHtml(draft.full_name)}</b>, именуемый(ая) в дальнейшем «Заказчик», составили настоящий Акт о нижеследующем:</p>
+    <p>1. Во исполнение договора № <b>${escapeHtml(draft.contract_number || '____')}</b> от <b>${escapeHtml(formatDateLongDots(draft.contract_date))}</b> Исполнитель оказал Заказчику юридические услуги по делу: <b>${serviceDescription}</b>.</p>
+    <p>2. Стоимость оказанных услуг составляет <b>${escapeHtml(formatNumberPlain(amount))}</b> (<b>${escapeHtml(rublesToWords(amount))}</b>) рублей.</p>
+    <p>3. Услуги оказаны в полном объеме и в согласованные сроки. Заказчик претензий по объему, качеству и срокам оказания услуг не имеет.</p>
+    <p>4. Настоящий Акт составлен в двух экземплярах, имеющих одинаковую юридическую силу.</p>
+    <table class="sign-table">
+      <tr>
+        <td>
+          <b>Исполнитель:</b><br>
+          ООО «Контакт+»<br><br><br>
+          _____________________ /Шайхулова К.Д./
+        </td>
+        <td>
+          <b>Заказчик:</b><br>
+          ${escapeHtml(draft.full_name)}<br><br><br>
+          _____________________ /${escapeHtml(draft.full_name)} /
+        </td>
+      </tr>
+    </table>
+  `);
+}
 
-        sectionP('2. Права и обязанности Сторон'),
-        p('2.1. Заказчик вправе:'),
-        p('- вносить предложения, получать консультации, информацию о ходе и результатах работы, а также знакомиться с правовой позицией, подготовленными и полученными документами;'),
-        p('- в любое время отказаться от выполнения договора с компенсацией расходов Исполнителю и уплатой вознаграждения соразмерно выполненной работе.'),
-        p('2.2. Заказчик обязан:'),
-        p('- оплатить выполненные Исполнителем работы (оказанные услуги) в соответствии с условиями настоящего договора;'),
-        p('- обеспечить своевременное предоставление Исполнителю всей информации и документации, необходимой для выполнения задания (оказания услуг);'),
-        p('- при необходимости обязан предоставить должным образом заверенную доверенность;'),
-        p('- четко формулировать задания для Исполнителя в письменном виде или устной форме;'),
-        p('- оказывать всяческое содействие в выполнении Исполнителем его обязанностей;'),
-        p('- заблаговременно (не менее чем за 5 дней) уведомлять Исполнителя о датах судебных заседаний, полученных от суда и лиц, участвующих в деле, документах и предоставлять документы, указанные в определении суда.'),
-        p('2.3. Исполнитель вправе:'),
-        p('- затребовать и получать от Заказчика всю необходимую для выполнения поручения информацию, документы и материалы, относящиеся к предмету настоящего договора;'),
-        p('- требовать соразмерного увеличения размера вознаграждения в случае существенного увеличения объема работ (услуг) по сравнению с предполагаемым на момент заключения соглашения.'),
-        p('2.4. Исполнитель обязан:'),
-        p('- выслушать Заказчика, изучить представленные документы и проинформировать Заказчика о возможных вариантах развития ситуаций;'),
-        p('- подготовить необходимые документы в срок, предусмотренный ГПК РФ;'),
-        p('- выполнить работы в полном объеме, порядке и сроки, предусмотренные законодательством;'),
-        p('- честно, разумно и добросовестно отстаивать права и законные интересы Доверителя. Использовать все не запрещенные законодательством РФ средства и способы для защиты прав и законных интересов Доверителя, при этом точно и неукоснительно соблюдать требования действующего законодательства РФ;'),
-        p('- сообщать Заказчику информацию о ходе и результатах выполнения настоящего Договора, сведения, имеющие существенное значение по делу.'),
+function buildReceiptWordHtml(draft) {
+  const receiptDate = formatDateFancy(draft.receipt_date || new Date());
+  const city = escapeHtml(draft.receipt_city || draft.contract_city || 'Удмуртская Республика, г. Ижевск');
+  const amount = getReceiptAmount(draft);
+  const amountDigits = escapeHtml(formatNumberPlain(amount));
+  const amountWords = escapeHtml(rublesToWords(amount));
+  const basis = escapeHtml(draft.service_description || draft.case_title || 'оказание юридических услуг');
+  return buildWordHtmlDocument(`Расписка_${escapeHtml(draft.contract_number || 'без_номера')}`, `
+    <div class="title">РАСПИСКА</div>
+    <table class="meta-table"><tr><td>${city}</td><td class="right">${receiptDate}</td></tr></table>
+    <p>ООО «Контакт+» подтверждает получение от <b>${escapeHtml(draft.full_name)}</b> денежных средств в размере <b>${amountDigits}</b> (<b>${amountWords}</b>) рублей.</p>
+    <p>Денежные средства получены в счет оплаты по договору № <b>${escapeHtml(draft.contract_number || '____')}</b> от <b>${escapeHtml(formatDateLongDots(draft.contract_date))}</b> за ${basis}.</p>
+    <p>Претензий по факту приема денежных средств стороны не имеют.</p>
+    <p style="margin-top:28px;"><b>Исполнитель:</b> ООО «Контакт+»</p>
+    <p>Директор _____________________ /Шайхулова К.Д./</p>
+    <p style="margin-top:28px;"><b>Заказчик:</b> ${escapeHtml(draft.full_name)}</p>
+    <p>_____________________ /${escapeHtml(draft.full_name)} /</p>
+  `);
+}
 
-        sectionP('3. Порядок выполнения работ (оказания услуг)'),
-        p('3.1. Исполнитель самостоятельно определяет и назначает ответственного за осуществление работы/услуг из числа своих сотрудников, при этом имеет право без уведомления Заказчика заменить работника без обоснования причин.'),
-        p('3.2. Исполнитель вправе самостоятельно определять позицию, форму и варианты выполнения работы (оказания услуг), при этом учитывая пожелания Заказчика.'),
-        p('3.2.1. Исполнитель не несет ответственности за последствия, связанные с представлением Заказчиком документов, не соответствующих действительности.'),
-        p('3.3. Все работы по делу проводятся Исполнителем в удобное для него время, но на основании сроков, изложенных в соответствующих Законах либо по договоренности с Заказчиком.'),
-        p('3.5. Возражения Заказчика по объему и качеству выполненных работ (оказания услуг) должны быть обоснованными и содержать конкретные ссылки на несоответствие выполненных работ/оказанных услуг. При этом Стороны обязаны немедленно согласовать условия устранения данной претензии.'),
+function buildPowerOfAttorneyWordHtml(draft) {
+  const poaDate = formatDateFancy(draft.power_of_attorney_date || new Date());
+  const city = escapeHtml(draft.power_of_attorney_city || draft.contract_city || 'Удмуртская Республика, г. Ижевск');
+  const powers = escapeHtml(draft.power_of_attorney_powers || '').replace(/
+/g, '<br>');
+  return buildWordHtmlDocument(`Доверенность_${escapeHtml(draft.full_name || 'клиент')}`, `
+    <div class="title">ДОВЕРЕННОСТЬ</div>
+    <table class="meta-table"><tr><td>${city}</td><td class="right">${poaDate}</td></tr></table>
+    <p>Я, <b>${escapeHtml(draft.full_name)}</b>, дата рождения: <b>${escapeHtml(formatDateLongDots(draft.customer_birth_date))}</b>, паспорт: <b>${escapeHtml(draft.passport_number || '')}</b>, выдан <b>${escapeHtml(draft.passport_issued_by || '')}</b>, код подразделения <b>${escapeHtml(draft.passport_division_code || '')}</b>, зарегистрированный(ая) по адресу: <b>${escapeHtml(draft.registration_address || draft.address || '')}</b>, настоящей доверенностью уполномочиваю:</p>
+    <p><b>${escapeHtml(draft.attorney_full_name)}</b>${draft.attorney_position ? `, ${escapeHtml(draft.attorney_position)}` : ''}${draft.attorney_passport ? `, паспорт: ${escapeHtml(draft.attorney_passport)}` : ''}${draft.attorney_address ? `, адрес: ${escapeHtml(draft.attorney_address)}` : ''}${draft.attorney_phone ? `, телефон: ${escapeHtml(draft.attorney_phone)}` : ''}.</p>
+    <p>Представлять мои интересы по делу / поручению: <b>${escapeHtml(draft.service_description || draft.case_title || 'юридическое сопровождение')}</b>.</p>
+    <p>Представителю предоставляются следующие полномочия:</p>
+    <p>${powers}</p>
+    <p>Доверенность выдана сроком на один год без права передоверия, если иное не будет согласовано дополнительно.</p>
+    <p style="margin-top:36px;">Доверитель: _____________________ /${escapeHtml(draft.full_name)} /</p>
+  `);
+}
 
-        sectionP('4. Стоимость работ и порядок расчетов'),
-        p(`4.1. Стоимость услуг по договору определяется в сумме ${amountDigits} (${amountWords}) и оплачивается следующим образом:`),
-        p(`- ${paymentMode};`),
-        p(`- в течение ${paymentDays} (${paymentDaysWords}) дней с момента подписания настоящего договора.`),
-        p('Названная сумма при любом исходе дела обратно не возвращается, считается соразмерной оплатой, без вознаграждения.'),
-        p('4.2. Согласованная между сторонами в п. 4.1 Договора стоимость услуг производится за оказанную Исполнителем по договору юридическую помощь независимо от положительного результата по делу.'),
-        p('4.3. В случае усложнения или увеличения объема работ/услуг по настоящему договору, по согласованию сторон размер оплаты за оказание юридической помощи, предусмотренный п. 4.1 настоящего Соглашения, подлежит увеличению по соглашению сторон.'),
-        p('4.4. Оплата судебных издержек (госпошлина, экспертиза, заключение специалиста и т.д.) производится Заказчиком за свой счет и не включается в стоимость услуг/работ по договору.'),
-        p('4.5. При необходимости выезда Исполнителя за пределы города Ижевска в связи с выполнением настоящего договора Заказчик возмещает фактически понесенные расходы на проезд, проживание, питание.'),
+function buildWordHtmlDocument(title, bodyHtml) {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(title)}</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  body { font-family: 'Times New Roman', serif; font-size: 14pt; line-height: 1.35; color: #000; }
+  .title { text-align: center; font-weight: 700; font-size: 16pt; margin-bottom: 8px; text-transform: uppercase; }
+  .subtitle { text-align: center; font-weight: 700; margin-bottom: 18px; }
+  .section-title { font-weight: 700; margin-top: 18px; margin-bottom: 8px; }
+  p { margin: 0 0 10px 0; text-align: justify; }
+  ul { margin: 0 0 12px 22px; }
+  li { margin-bottom: 6px; }
+  .meta-table, .sign-table { width: 100%; border-collapse: collapse; margin: 0 0 16px 0; }
+  .meta-table td { vertical-align: top; }
+  .right { text-align: right; }
+  .sign-table td { width: 50%; vertical-align: top; padding-top: 18px; }
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+}
 
-        sectionP('5. Форс-мажор'),
-        p('5.1. Ни одна из Сторон не будет нести ответственности за полное или частичное невыполнение любых своих обязательств, если невыполнение будет являться прямым следствием обстоятельств непреодолимого (форс-мажорного) характера, находящихся вне контроля Сторон, возникших после заключения Договора.'),
-        p('5.2. Под форс-мажорными обстоятельствами понимаются стихийные бедствия, войны, катастрофы, землетрясения и иные природные катаклизмы.'),
+function downloadWordDocument(html, filename) {
+  const blob = new Blob(['﻿', html], { type: 'application/msword;charset=utf-8' });
+  downloadBlob(blob, filename);
+}
 
-        sectionP('6. Расторжение договора'),
-        p('6.1. Договор может быть расторгнут по инициативе Заказчика в случаях, предусмотренных действующим законодательством РФ.'),
-        p('6.2. Договор может быть расторгнут по инициативе Исполнителя в случае:'),
-        p('а) не обеспечения Исполнителя Заказчиком информацией, требуемой для выполнения Исполнителем своих обязательств по настоящему Договору;'),
-        p('б) создания Заказчиком условий, препятствующих выполнению Исполнителем принятых по Договору обязательств;'),
-        p('в) в иных случаях, предусмотренных действующим законодательством.'),
-        p('6.3. Сторона, выступившая инициатором расторжения Договора, обязана уведомить другую сторону о прекращении работ не менее чем за 3 (три) рабочих дня до предполагаемой даты прекращения работ/услуг.'),
-        p('6.4. С момента получения Стороной извещения о расторжении Договора Исполнитель не имеет права продолжать работу/услуги по Договору, а Заказчик не вправе требовать продолжения работ/услуг.'),
-
-        sectionP('7. Другие условия'),
-        p('7.1. Настоящий договор считается заключенным и вступает в действие с момента подписания его Сторонами и действует в течение 1 (одного) года. В части неисполненных обязательств Договор продолжает действовать и в случае его расторжения до полного и надлежащего исполнения Сторонами этих обязательств.'),
-        p('7.2. Стороны обязуются все возникающие разногласия решать путем переговоров. При невозможности урегулирования сторонами возникших разногласий спор разрешается в судебном порядке согласно законодательству РФ.'),
-        p('7.3. Во всех иных случаях, не упомянутых в настоящем Договоре, стороны руководствуются положениями и нормами действующего законодательства.'),
-        p('7.4. Настоящий договор составлен в двух экземплярах, по одному для каждой стороны, оба экземпляра имеют одинаковую юридическую силу.'),
-
-        sectionP('8. Адреса, реквизиты и подписи Сторон'),
-        signaturesTable,
-      ],
-    }],
-  });
+function formatDateFancy(value) {
+  const date = value instanceof Date ? stripTime(value) : parseDateSafe(value);
+  if (!date) return '«____» ____________ 20___ г.';
+  const day = String(date.getDate()).padStart(2, '0');
+  return `«${day}» ${monthNameRu(date)} ${date.getFullYear()} г.`;
 }
 
 function createContractFilename(draft) {
   const base = `Договор_${(draft.contract_number || 'без_номера').toString()}_${(draft.full_name || 'клиент').toString()}`;
-  return `${sanitizeFilename(base)}.docx`;
+  return `${sanitizeFilename(base)}.doc`;
+}
+
+function createActFilename(draft) {
+  const base = `Акт_${(draft.contract_number || 'без_номера').toString()}_${(draft.full_name || 'клиент').toString()}`;
+  return `${sanitizeFilename(base)}.doc`;
+}
+
+function createReceiptFilename(draft) {
+  const base = `Расписка_${(draft.contract_number || 'без_номера').toString()}_${(draft.full_name || 'клиент').toString()}`;
+  return `${sanitizeFilename(base)}.doc`;
+}
+
+function createPowerOfAttorneyFilename(draft) {
+  const base = `Доверенность_${(draft.full_name || 'клиент').toString()}`;
+  return `${sanitizeFilename(base)}.doc`;
 }
 
 function downloadBlob(blob, filename) {
@@ -2657,6 +2802,7 @@ function sanitizeFilename(value) {
 }
 
 function paymentTypeContractLabel(value) {
+
   return {
     '100% предоплата': 'авансовым путем',
     'частями': 'частями',

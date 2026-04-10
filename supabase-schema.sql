@@ -34,6 +34,18 @@ create table if not exists public.clients (
   passport_issued_by text,
   passport_division_code text,
   service_description text,
+  act_date date,
+  act_city text,
+  receipt_date date,
+  receipt_city text,
+  attorney_full_name text,
+  attorney_position text,
+  attorney_passport text,
+  attorney_address text,
+  attorney_phone text,
+  power_of_attorney_date date,
+  power_of_attorney_city text,
+  power_of_attorney_powers text,
   contract_amount numeric(12,2) not null default 0,
   payment_type text check (payment_type in ('100% предоплата', 'частями', 'по графику')),
   payment_deadline date,
@@ -139,6 +151,18 @@ alter table public.clients add column if not exists passport_number text;
 alter table public.clients add column if not exists passport_issued_by text;
 alter table public.clients add column if not exists passport_division_code text;
 alter table public.clients add column if not exists service_description text;
+alter table public.clients add column if not exists act_date date;
+alter table public.clients add column if not exists act_city text;
+alter table public.clients add column if not exists receipt_date date;
+alter table public.clients add column if not exists receipt_city text;
+alter table public.clients add column if not exists attorney_full_name text;
+alter table public.clients add column if not exists attorney_position text;
+alter table public.clients add column if not exists attorney_passport text;
+alter table public.clients add column if not exists attorney_address text;
+alter table public.clients add column if not exists attorney_phone text;
+alter table public.clients add column if not exists power_of_attorney_date date;
+alter table public.clients add column if not exists power_of_attorney_city text;
+alter table public.clients add column if not exists power_of_attorney_powers text;
 alter table public.payments add column if not exists workspace_key text;
 alter table public.payments add column if not exists payment_channel text default 'cashless';
 alter table public.expenses add column if not exists workspace_key text;

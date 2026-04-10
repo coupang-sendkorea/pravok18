@@ -341,6 +341,66 @@
         </section>
 
         <section class="glass-subcard">
+          <h4>Данные для акта, расписки и доверенности</h4>
+          <div class="form-grid cols-4">
+            <div>
+              <label for="client-act-date">Дата акта</label>
+              <input id="client-act-date" type="date" />
+            </div>
+            <div>
+              <label for="client-act-city">Место акта</label>
+              <input id="client-act-city" type="text" placeholder="Удмуртская Республика, г. Ижевск" />
+            </div>
+            <div>
+              <label for="client-receipt-date">Дата расписки</label>
+              <input id="client-receipt-date" type="date" />
+            </div>
+            <div>
+              <label for="client-receipt-city">Место расписки</label>
+              <input id="client-receipt-city" type="text" placeholder="Удмуртская Республика, г. Ижевск" />
+            </div>
+            <div class="full-width">
+              <label for="client-attorney-full-name">Представитель по доверенности</label>
+              <input id="client-attorney-full-name" type="text" placeholder="ФИО представителя" />
+            </div>
+            <div>
+              <label for="client-attorney-position">Статус / должность</label>
+              <input id="client-attorney-position" type="text" placeholder="Например: представитель ООО «Контакт+»" />
+            </div>
+            <div class="full-width">
+              <label for="client-attorney-passport">Паспорт представителя</label>
+              <input id="client-attorney-passport" type="text" placeholder="Серия, номер, кем и когда выдан" />
+            </div>
+            <div class="full-width">
+              <label for="client-attorney-address">Адрес представителя</label>
+              <input id="client-attorney-address" type="text" placeholder="Адрес регистрации или проживания представителя" />
+            </div>
+            <div>
+              <label for="client-attorney-phone">Телефон представителя</label>
+              <input id="client-attorney-phone" type="text" placeholder="Контактный телефон" />
+            </div>
+            <div>
+              <label for="client-power-date">Дата доверенности</label>
+              <input id="client-power-date" type="date" />
+            </div>
+            <div>
+              <label for="client-power-city">Место доверенности</label>
+              <input id="client-power-city" type="text" placeholder="Удмуртская Республика, г. Ижевск" />
+            </div>
+            <div class="full-width">
+              <label for="client-power-powers">Полномочия по доверенности</label>
+              <textarea id="client-power-powers" rows="4" placeholder="Например: представлять интересы Доверителя в судах, у судебных приставов, в государственных органах, подавать и получать документы, подписывать заявления и ходатайства"></textarea>
+            </div>
+          </div>
+          <div class="doc-actions">
+            <button id="generate-contract-btn" class="btn btn-secondary" type="button">Сформировать договор Word</button>
+            <button id="generate-act-btn" class="btn btn-secondary" type="button">Сформировать акт Word</button>
+            <button id="generate-receipt-btn" class="btn btn-secondary" type="button">Сформировать расписку Word</button>
+            <button id="generate-poa-btn" class="btn btn-secondary" type="button">Сформировать доверенность Word</button>
+          </div>
+        </section>
+
+        <section class="glass-subcard">
           <h4>Финансовые условия</h4>
           <div class="form-grid cols-4">
             <div>
@@ -407,8 +467,7 @@
           <button id="restore-client-btn" class="btn btn-secondary hidden" type="button">Вернуть из архива</button>
         </div>
         <div class="modal-foot-right">
-          <button id="generate-contract-btn" class="btn btn-secondary" type="button">Сформировать договор .docx</button>
-          <button class="btn btn-secondary" type="button" data-close-modal="client-modal">Отмена</button>
+                    <button class="btn btn-secondary" type="button" data-close-modal="client-modal">Отмена</button>
           <button id="save-client-btn" class="btn btn-primary" type="button">Сохранить</button>
         </div>
       </div>

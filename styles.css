@@ -746,3 +746,15 @@ code {
   .calendar-day-name { display: none; }
   .table { min-width: 760px; }
 }
+
+
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.doc-actions .btn {
+  min-width: 220px;
+}
