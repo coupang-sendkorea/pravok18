@@ -1,5 +1,3 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-
 const CONFIG = window.APP_CONFIG || {};
 const hasSupabaseConfig = Boolean(
   CONFIG.SUPABASE_URL &&
@@ -8,12 +6,175 @@ const hasSupabaseConfig = Boolean(
   !CONFIG.SUPABASE_KEY.includes('PASTE_')
 );
 
+function createRestSupabaseClient(url, apiKey) {
+  function normalizeValue(value) {
+    if (value === null) return 'null';
+    if (value === undefined) return '';
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
+
+  class QueryBuilder {
+    constructor(table) {
+      this.table = table;
+      this.action = 'select';
+      this.columns = '*';
+      this.filters = [];
+      this.orders = [];
+      this.payload = null;
+      this.expectSingle = false;
+      this.returnRepresentation = false;
+    }
+
+    select(columns = '*') {
+      this.columns = columns;
+      this.returnRepresentation = true;
+      if (this.action === 'select') this.action = 'select';
+      return this;
+    }
+
+    insert(payload) {
+      this.action = 'insert';
+      this.payload = payload;
+      return this;
+    }
+
+    update(payload) {
+      this.action = 'update';
+      this.payload = payload;
+      return this;
+    }
+
+    delete() {
+      this.action = 'delete';
+      return this;
+    }
+
+    eq(column, value) {
+      this.filters.push({ column, op: 'eq', value });
+      return this;
+    }
+
+    in(column, values) {
+      this.filters.push({ column, op: 'in', value: values });
+      return this;
+    }
+
+    order(column, options = {}) {
+      this.orders.push({ column, ascending: options.ascending !== false });
+      return this;
+    }
+
+    single() {
+      this.expectSingle = true;
+      return this;
+    }
+
+    then(resolve, reject) {
+      return this.execute().then(resolve, reject);
+    }
+
+    async execute() {
+      const headers = {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+      };
+      const params = new URLSearchParams();
+      let method = 'GET';
+      let body;
+
+      if (this.action === 'select') {
+        params.set('select', this.columns || '*');
+      } else if (this.returnRepresentation) {
+        params.set('select', this.columns || '*');
+        headers['Prefer'] = 'return=representation';
+      } else {
+        headers['Prefer'] = 'return=minimal';
+      }
+
+      for (const filter of this.filters) {
+        if (filter.op === 'eq') {
+          params.append(filter.column, `eq.${normalizeValue(filter.value)}`);
+        }
+        if (filter.op === 'in') {
+          const list = Array.isArray(filter.value)
+            ? filter.value.map((item) => JSON.stringify(String(item))).join(',')
+            : '';
+          params.append(filter.column, `in.(${list})`);
+        }
+      }
+
+      if (this.orders.length) {
+        params.set('order', this.orders.map((item) => `${item.column}.${item.ascending ? 'asc' : 'desc'}`).join(','));
+      }
+
+      if (this.expectSingle) {
+        headers['Accept'] = 'application/vnd.pgrst.object+json';
+      }
+
+      if (this.action === 'insert') {
+        method = 'POST';
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(this.payload);
+      }
+      if (this.action === 'update') {
+        method = 'PATCH';
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(this.payload);
+      }
+      if (this.action === 'delete') {
+        method = 'DELETE';
+      }
+
+      const query = params.toString();
+      const endpoint = `${url.replace(/\/$/, '')}/rest/v1/${this.table}${query ? `?${query}` : ''}`;
+
+      try {
+        const response = await fetch(endpoint, { method, headers, body });
+        const raw = await response.text();
+        let parsed = null;
+        if (raw) {
+          try {
+            parsed = JSON.parse(raw);
+          } catch (error) {
+            parsed = raw;
+          }
+        }
+
+        if (!response.ok) {
+          const message = parsed?.message || parsed?.error_description || parsed?.hint || response.statusText || 'Ошибка Supabase';
+          return { data: null, error: { message, details: parsed } };
+        }
+
+        return { data: parsed, error: null };
+      } catch (error) {
+        return { data: null, error: { message: error.message || 'Сетевая ошибка', details: error } };
+      }
+    }
+  }
+
+  return {
+    from(table) {
+      return new QueryBuilder(table);
+    },
+  };
+}
+
 const supabase = hasSupabaseConfig
-  ? createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY)
+  ? createRestSupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY)
   : null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+
+window.addEventListener('error', (event) => {
+  console.error('[Право CRM] Ошибка приложения:', event.error || event.message || event);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Право CRM] Необработанная ошибка Promise:', event.reason || event);
+});
 
 const state = {
   clients: [],
@@ -179,6 +340,19 @@ const personalFields = {
 };
 
 init();
+
+
+function bootApp() {
+  try {
+    if (!window.APP_CONFIG) {
+      console.warn('[Право CRM] Файл config.js не загружен.');
+    }
+    init();
+  } catch (error) {
+    console.error('[Право CRM] Ошибка запуска:', error);
+    alert('Приложение не удалось запустить. Обновите страницу через Ctrl+F5.');
+  }
+}
 
 function init() {
   bindGlobalEvents();
@@ -2710,8 +2884,7 @@ function buildReceiptWordHtml(draft) {
 function buildPowerOfAttorneyWordHtml(draft) {
   const poaDate = formatDateFancy(draft.power_of_attorney_date || new Date());
   const city = escapeHtml(draft.power_of_attorney_city || draft.contract_city || 'Удмуртская Республика, г. Ижевск');
-  const powers = escapeHtml(draft.power_of_attorney_powers || '').replace(/
-/g, '<br>');
+  const powers = escapeHtml(draft.power_of_attorney_powers || '').replace(/\n/g, '<br>');
   return buildWordHtmlDocument(`Доверенность_${escapeHtml(draft.full_name || 'клиент')}`, `
     <div class="title">ДОВЕРЕННОСТЬ</div>
     <table class="meta-table"><tr><td>${city}</td><td class="right">${poaDate}</td></tr></table>
