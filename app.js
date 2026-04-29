@@ -497,7 +497,7 @@ async function loadAllData({ silent = true } = {}) {
 
   try {
     if (!silent) showToast('Обновляю данные…', 'info', 1400);
-    await migrateLegacyWorkspaceIfNeeded();
+    // Миграция старых данных отключена: текущие данные уже привязаны к workspace_key.
 
     const [clientsRes, paymentsRes, expensesRes, schedulesRes, eventsRes, cashRes, loansRes, personalRes] = await Promise.all([
       supabase.from('clients').select('*').eq('workspace_key', state.workspaceKey).order('created_at', { ascending: false }),
@@ -536,40 +536,7 @@ async function loadAllData({ silent = true } = {}) {
 }
 
 async function migrateLegacyWorkspaceIfNeeded() {
-  if (!supabase || !state.workspaceKey) return;
-
-  // Безопасная проверка без HEAD/count: у некоторых браузеров и расширений такие запросы к Supabase
-  // приводили к ошибке "Failed to fetch" ещё до загрузки данных.
-  const { data: currentRows, error: currentError } = await supabase
-    .from('clients')
-    .select('id')
-    .eq('workspace_key', state.workspaceKey);
-
-  if (currentError) throw currentError;
-  if (Array.isArray(currentRows) && currentRows.length > 0) return;
-
-  const { data: legacyRows, error: legacyError } = await supabase
-    .from('clients')
-    .select('id')
-    .is('workspace_key', null);
-
-  if (legacyError) throw legacyError;
-  if (!Array.isArray(legacyRows) || legacyRows.length === 0) return;
-
-  const confirmed = window.confirm('Найдены старые данные без привязки к паролю. Привязать их к текущему паролю, чтобы они открывались на всех устройствах?');
-  if (!confirmed) return;
-
-  const tableNames = ['clients', 'payments', 'expenses', 'payment_schedules', 'events'];
-  for (const tableName of tableNames) {
-    const { error } = await supabase
-      .from(tableName)
-      .update({ workspace_key: state.workspaceKey })
-      .is('workspace_key', null);
-
-    if (error) throw error;
-  }
-
-  showToast('Старые данные привязаны к текущему паролю.', 'success', 4200);
+  return;
 }
 
 function renderAll() {

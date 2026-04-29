@@ -71,6 +71,15 @@ code {
   border-radius: 8px;
 }
 .hidden { display: none !important; }
+.kind-separator {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  border: 1px dashed var(--border-strong);
+  margin-top: 4px;
+}
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .line-clamp-2, .line-clamp-3, .wrap-cell {
