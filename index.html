@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260410r3" />
+  <link rel="stylesheet" href="styles.css?v=20260410r5" />
 </head>
 <body>
   <div id="toast-container" class="toast-container"></div>
@@ -267,7 +267,14 @@
           <h4>Основные данные</h4>
           <div class="form-grid cols-2">
             <div>
-              <label for="client-full-name">ФИО клиента</label>
+              <label for="client-type">Тип клиента</label>
+              <select id="client-type">
+                <option value="individual">Физическое лицо</option>
+                <option value="company">Юридическое лицо</option>
+              </select>
+            </div>
+            <div>
+              <label for="client-full-name" id="client-name-label">ФИО клиента</label>
               <input id="client-full-name" type="text" required />
             </div>
             <div>
@@ -286,8 +293,8 @@
               <label for="client-messenger">Мессенджер</label>
               <input id="client-messenger" type="text" />
             </div>
-            <div>
-              <label for="client-address">Адрес</label>
+            <div class="full-width">
+              <label for="client-address">Адрес / комментарий для контакта</label>
               <input id="client-address" type="text" />
             </div>
           </div>
@@ -316,29 +323,86 @@
               <label for="client-contract-payment-days">Срок оплаты в днях</label>
               <input id="client-contract-payment-days" type="number" min="0" step="1" placeholder="Например: 5" />
             </div>
-            <div>
-              <label for="client-customer-birth-date">Дата рождения</label>
-              <input id="client-customer-birth-date" type="date" />
-            </div>
-            <div class="full-width">
-              <label for="client-registration-address">Адрес регистрации</label>
-              <input id="client-registration-address" type="text" placeholder="Полный адрес регистрации клиента" />
-            </div>
-            <div>
-              <label for="client-passport-number">Паспорт</label>
-              <input id="client-passport-number" type="text" placeholder="Серия и номер" />
-            </div>
-            <div class="full-width">
-              <label for="client-passport-issued-by">Кем выдан паспорт</label>
-              <input id="client-passport-issued-by" type="text" placeholder="Орган, выдавший паспорт" />
-            </div>
-            <div>
-              <label for="client-passport-division-code">Код подразделения</label>
-              <input id="client-passport-division-code" type="text" placeholder="000-000" />
-            </div>
+
             <div class="full-width">
               <label for="client-service-description">Формулировка услуги для договора</label>
               <textarea id="client-service-description" rows="3" placeholder="Например: о взыскании страхового возмещения и неустойки"></textarea>
+            </div>
+
+            <div class="full-width kind-separator individual-only" data-client-kind="individual">
+              <strong>Реквизиты физического лица</strong>
+            </div>
+            <div class="individual-only" data-client-kind="individual">
+              <label for="client-customer-birth-date">Дата рождения (для доверенности)</label>
+              <input id="client-customer-birth-date" type="date" />
+            </div>
+            <div class="full-width individual-only" data-client-kind="individual">
+              <label for="client-registration-address">Адрес регистрации</label>
+              <input id="client-registration-address" type="text" placeholder="Полный адрес регистрации клиента" />
+            </div>
+            <div class="individual-only" data-client-kind="individual">
+              <label for="client-passport-number">Паспорт</label>
+              <input id="client-passport-number" type="text" placeholder="Серия и номер" />
+            </div>
+            <div class="full-width individual-only" data-client-kind="individual">
+              <label for="client-passport-issued-by">Кем выдан паспорт</label>
+              <input id="client-passport-issued-by" type="text" placeholder="Орган, выдавший паспорт" />
+            </div>
+            <div class="individual-only" data-client-kind="individual">
+              <label for="client-passport-division-code">Код подразделения</label>
+              <input id="client-passport-division-code" type="text" placeholder="000-000" />
+            </div>
+
+            <div class="full-width kind-separator company-only hidden" data-client-kind="company">
+              <strong>Реквизиты юридического лица</strong>
+            </div>
+            <div class="full-width company-only hidden" data-client-kind="company">
+              <label for="client-legal-representative-name">Представитель заказчика</label>
+              <input id="client-legal-representative-name" type="text" placeholder="ФИО руководителя / представителя" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-legal-representative-position">Должность представителя</label>
+              <input id="client-legal-representative-position" type="text" placeholder="Например: директор" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-legal-representative-basis">Основание полномочий</label>
+              <input id="client-legal-representative-basis" type="text" placeholder="Например: Устава" />
+            </div>
+            <div class="full-width company-only hidden" data-client-kind="company">
+              <label for="client-company-legal-address">Юридический адрес</label>
+              <input id="client-company-legal-address" type="text" placeholder="Полный юридический адрес" />
+            </div>
+            <div class="full-width company-only hidden" data-client-kind="company">
+              <label for="client-company-mailing-address">Почтовый адрес</label>
+              <input id="client-company-mailing-address" type="text" placeholder="Если совпадает с юридическим, можно не заполнять" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-inn">ИНН</label>
+              <input id="client-company-inn" type="text" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-kpp">КПП</label>
+              <input id="client-company-kpp" type="text" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-ogrn">ОГРН</label>
+              <input id="client-company-ogrn" type="text" />
+            </div>
+            <div class="full-width company-only hidden" data-client-kind="company">
+              <label for="client-company-bank-name">Банк</label>
+              <input id="client-company-bank-name" type="text" placeholder="Наименование банка" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-bank-account">Расчетный счет</label>
+              <input id="client-company-bank-account" type="text" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-correspondent-account">Корреспондентский счет</label>
+              <input id="client-company-correspondent-account" type="text" />
+            </div>
+            <div class="company-only hidden" data-client-kind="company">
+              <label for="client-company-bik">БИК</label>
+              <input id="client-company-bik" type="text" />
             </div>
           </div>
         </section>
@@ -702,7 +766,7 @@
     </form>
   </dialog>
 
-  <script src="config.js?v=20260410r3"></script>
-  <script defer src="app.js?v=20260410r3"></script>
+  <script src="config.js?v=20260410r5"></script>
+  <script defer src="app.js?v=20260410r5"></script>
 </body>
 </html>
